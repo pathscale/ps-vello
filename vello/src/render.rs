@@ -278,7 +278,21 @@ impl Render {
             buffer_sizes.path_reduced.size_in_bytes().into(),
             "vello.reduced_buf",
         );
-        let bump_buf = BufferProxy::new(buffer_sizes.bump_alloc.size_in_bytes().into(), "bump_buf");
+        // One bump buffer for the whole frame, created here because `prepare`
+        // is the first stage that touches it.
+        //
+        // The merge that brought the robust memory port onto master left two:
+        // this one, named `bump_buf`, and a second named `vello.bump_buf`
+        // created further down for the rest of the pipeline. The pool keys on
+        // `(size, usage, name)`, so two names are two different GPU buffers.
+        // `prepare` then read and wrote a buffer nothing else used, while the
+        // real one was cleared every frame, which threw away the very failure
+        // flags the growth loop reads back. Buffers never grew, every frame
+        // that overflowed was cancelled, and the window stayed empty.
+        let bump_buf = BufferProxy::new(
+            buffer_sizes.bump_alloc.size_in_bytes().into(),
+            "vello.bump_buf",
+        );
         let bump_buf = ResourceProxy::Buffer(bump_buf);
         recording.dispatch(shaders.prepare, (1, 1, 1), [config_buf, bump_buf]);
         // TODO: really only need pathtag_wgs - 1
@@ -341,12 +355,14 @@ impl Render {
             wg_counts.bbox_clear,
             [config_buf, path_bbox_buf],
         );
-        let bump_buf = BufferProxy::new(
-            buffer_sizes.bump_alloc.size_in_bytes().into(),
-            "vello.bump_buf",
-        );
-        recording.clear_all(bump_buf);
-        let bump_buf = ResourceProxy::Buffer(bump_buf);
+        // `bump_buf` already exists: it was created above so `prepare` could
+        // read the previous frame's failure flags out of it. Creating a second
+        // one here, and clearing it, is what broke the growth loop.
+        //
+        // It is not cleared either. `prepare` owns that decision: it resets the
+        // counters itself once it has decided whether this frame can run, which
+        // is the only point where the previous frame's values have been read
+        // and are safe to discard.
         let lines_buf = ResourceProxy::new_buf(
             buffer_sizes.bump_buffers.lines.size_in_bytes().into(),
             "vello.lines_buf",

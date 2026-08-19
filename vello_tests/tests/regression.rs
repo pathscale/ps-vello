@@ -456,3 +456,49 @@ fn atlas_stays_correct_across_frames_gpu() {
 fn atlas_stays_correct_across_frames_cpu() {
     atlas_stays_correct_across_frames(true);
 }
+
+/// A scene that overflows its initial buffers must recover, not stay blank.
+///
+/// Robust dynamic memory starts small and grows from what a frame reported it
+/// needed, and that readback is two frames behind. A scene that overflows
+/// therefore renders empty until the growth catches up. This drives the same
+/// heavy scene repeatedly through one renderer and asserts it eventually draws:
+/// if it never does, growth is not converging and every frame is blank, which
+/// is the grey window.
+#[test]
+#[cfg_attr(skip_gpu_tests, ignore)]
+fn overflowing_scene_recovers_over_frames() {
+    const SIZE: u32 = 1024;
+    let heavy = || -> Scene {
+        let mut scene = Scene::new();
+        for row in 0..80 {
+            for column in 0..80 {
+                let x = f64::from(column) * 12.0;
+                let y = f64::from(row) * 12.0;
+                scene.fill(
+                    vello::peniko::Fill::NonZero,
+                    Affine::IDENTITY,
+                    palette::css::RED,
+                    None,
+                    &Rect::new(x + 1.0, y + 1.0, x + 10.0, y + 10.0),
+                );
+            }
+        }
+        scene
+    };
+    let scenes: Vec<Scene> = (0..12).map(|_| heavy()).collect();
+    let mut params = TestParams::new("overflowing_scene_recovers_over_frames", SIZE, SIZE);
+    params.base_color = Some(palette::css::BLACK);
+    let rendered =
+        pollster::block_on(vello_tests::get_scene_images_sequence(&params, &scenes)).unwrap();
+    let raw = rendered.data.data();
+    let drawn = raw
+        .chunks_exact(4)
+        .filter(|pixel| pixel[0] > 8 || pixel[1] > 8 || pixel[2] > 8)
+        .count();
+    assert!(
+        drawn > 1000,
+        "after 12 frames only {drawn} pixels were drawn: buffer growth never \
+         caught up, so every frame is empty"
+    );
+}
