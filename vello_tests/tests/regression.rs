@@ -10,8 +10,8 @@ use vello::{
     AaConfig, Scene,
     kurbo::{Affine, Rect, RoundedRect, Stroke},
     peniko::{
-        Blob, Color, ColorStop, Extend, Gradient, ImageAlphaType, ImageBrush, ImageData, ImageFormat,
-        ImageQuality, InterpolationAlphaSpace, color::palette,
+        Blob, Color, ColorStop, Extend, Gradient, ImageAlphaType, ImageBrush, ImageData,
+        ImageFormat, ImageQuality, InterpolationAlphaSpace, color::palette,
     },
 };
 use vello_tests::{TestParams, smoke_snapshot_test_sync, snapshot_test_sync};
@@ -282,7 +282,7 @@ fn many_bins_cpu() {
 /// frame that renders nothing but its background passes any "did it render"
 /// test, and that is exactly the failure being guarded against.
 fn atlas_growth_keeps_drawing_images(use_cpu: bool) {
-    // Distinct colours so a mis-sampled atlas cannot accidentally look correct.
+    // Distinct colours so a wrongly sampled atlas cannot accidentally look correct.
     const COLOURS: [Color; 4] = [
         palette::css::RED,
         palette::css::LIME,
