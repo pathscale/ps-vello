@@ -21,7 +21,7 @@ use skrifa::{
     raw::{TableProvider, tables::cpal::Cpal},
 };
 #[cfg(feature = "bump_estimate")]
-use vello_encoding::BumpAllocatorMemory;
+use vello_encoding::BumpAllocators;
 use vello_encoding::{
     DrawBeginClip, Encoding, FontEmbolden, Glyph, GlyphRun, NormalizedCoord, Patch, Transform,
 };
