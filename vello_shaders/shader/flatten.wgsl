@@ -833,6 +833,9 @@ fn main(
     @builtin(global_invocation_id) global_id: vec3<u32>,
     @builtin(local_invocation_id) local_id: vec3<u32>,
 ) {
+    if config.cancelled != 0u {
+        return;
+    }
     let ix = global_id.x;
     pathdata_base = config.pathdata_base;
     bbox = vec4(1e31, 1e31, -1e31, -1e31);
@@ -870,7 +873,7 @@ fn main(
                     let offset_tangent = offset * normalize(tangent);
                     let n = offset_tangent.yx * vec2f(-1., 1.);
                     draw_cap(path_ix, (style_flags & STYLE_FLAGS_START_CAP_MASK) >> 2u,
-                             pts.p0, pts.p0 - n, pts.p0 + n, -offset_tangent, transform);
+                        pts.p0, pts.p0 - n, pts.p0 + n, -offset_tangent, transform);
                 } else {
                     // Don't draw anything if the path is closed.
                 }
@@ -900,11 +903,11 @@ fn main(
 
                 if neighbor.do_join {
                     draw_join(path_ix, style_flags, pts.p3, tan_prev, tan_next,
-                              n_prev, n_next, transform);
+                        n_prev, n_next, transform);
                 } else {
                     // Draw end cap.
                     draw_cap(path_ix, (style_flags & STYLE_FLAGS_END_CAP_MASK),
-                             pts.p3, pts.p3 + n_prev, pts.p3 - n_prev, offset_tangent, transform);
+                        pts.p3, pts.p3 + n_prev, pts.p3 - n_prev, offset_tangent, transform);
                 }
             }
         } else {

@@ -54,6 +54,9 @@ fn main(
     @builtin(local_invocation_id) local_id: vec3<u32>,
     @builtin(workgroup_id) wg_id: vec3<u32>,
 ) {
+    if config.cancelled != 0u {
+        return;
+    }
     // Reduce prefix of workgroups up to this one
     var agg = draw_monoid_identity();
     if local_id.x < wg_id.x {
