@@ -94,9 +94,9 @@ clippy.wildcard_dependencies = "warn"
 # END LINEBENDER LINT SET
 
 [workspace.dependencies]
-vello = { version = "0.10.0", path = "vello" }
-vello_encoding = { version = "0.10.0", path = "vello_encoding" }
-vello_shaders = { version = "0.10.0", path = "vello_shaders" }
+vello = { package = "ps-vello", version = "0.10.0", path = "vello" }
+vello_encoding = { package = "ps-vello-encoding", version = "0.10.0", path = "vello_encoding" }
+vello_shaders = { package = "ps-vello-shaders", version = "0.10.0", path = "vello_shaders" }
 bytemuck = { version = "1.25.0", features = ["derive"] }
 skrifa = { version = "0.44.0", default-features = false, features = ["autohint_shaping"] }
 # The version of kurbo used below should be kept in sync

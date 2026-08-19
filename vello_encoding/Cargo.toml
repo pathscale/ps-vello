@@ -1,5 +1,5 @@
 [package]
-name = "vello_encoding"
+name = "ps-vello-encoding"
 version.workspace = true # We mimic Vello's version
 description = "Vello types that represent the data that needs to be rendered."
 categories = ["rendering", "graphics"]
@@ -23,6 +23,9 @@ bump_estimate = []
 
 [lints]
 workspace = true
+
+[lib]
+name = "vello_encoding"
 
 [dependencies]
 bytemuck = { workspace = true }
