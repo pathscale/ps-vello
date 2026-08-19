@@ -51,15 +51,77 @@ pub struct BumpAllocatorMemory {
     pub lines: BufferSize<LineSoup>,
 }
 
+/// The smallest `max_storage_buffer_binding_size` any target device reports.
+///
+/// WebGPU guarantees this as the floor, so it is what [`BumpAllocators::memory`]
+/// bounds against when no device limit has been supplied. A device that allows
+/// more gets the extra through [`BumpAllocators::memory_within`].
+pub const MIN_MAX_STORAGE_BUFFER_BINDING_SIZE: u32 = 128 << 20;
+
+/// Clamp one buffer's element count to what a single binding can address.
+///
+/// This is the TODO upstream left in the reallocation path: "we should have
+/// awareness of the maximum binding size supported by the device. That's easy
+/// for all buffers but lines and ptcl". Those two are hard there because they
+/// are a static prefix plus a dynamic tail, and the growth path only sees the
+/// tail, while it is the *sum* that gets bound. Measured on this app, `ptcl`
+/// reached 192 MB against a 128 MB limit, `create_bind_group` refused it, wgpu
+/// turned the refusal into a panic and the window came up grey.
+///
+/// Doing it here, where the sum is formed, is what makes the hard cases easy:
+/// every allocation path routes through this function, so none can bypass it.
+/// The shaders already report a shortfall through `bump.failed`, so a scene too
+/// large for the device degrades to missing content rather than a dead process.
+fn clamp_to_binding_limit(elements: u32, element_size: usize, limit: u32, name: &str) -> u32 {
+    let ceiling = limit / u32::try_from(element_size).unwrap_or(u32::MAX).max(1);
+    if elements > ceiling {
+        log::warn!(
+            "{name} wants {elements} elements but a binding addresses at most {ceiling}; \
+             clamping, so this frame will be missing content"
+        );
+        return ceiling;
+    }
+    elements
+}
+
 impl BumpAllocators {
+    /// Buffer sizes for this frame, bounded by the guaranteed binding floor.
     pub fn memory(&self, layout: &Layout) -> BumpAllocatorMemory {
-        let binning = BufferSize::new(self.binning + layout.bin_data_start);
-        let ptcl = BufferSize::new(self.ptcl + layout.ptcl_dyn_start);
-        let tile = BufferSize::new(self.tile);
-        let seg_counts = BufferSize::new(self.seg_counts);
-        let segments = BufferSize::new(self.segments);
-        let lines = BufferSize::new(self.lines);
-        let blend_spill = BufferSize::new(self.blend_spill);
+        self.memory_within(layout, MIN_MAX_STORAGE_BUFFER_BINDING_SIZE)
+    }
+
+    /// Buffer sizes for this frame, bounded by a device's real binding limit.
+    ///
+    /// Pass `device.limits().max_storage_buffer_binding_size` to let hardware
+    /// that allows more than the floor actually use it.
+    pub fn memory_within(&self, layout: &Layout, max_binding_size: u32) -> BumpAllocatorMemory {
+        // Element sizes come from the buffer's own element type: a field added
+        // to `Tile` or `LineSoup` must not silently leave a stale size behind.
+        fn clamp<T: Sized>(elements: u32, limit: u32, name: &str) -> BufferSize<T> {
+            BufferSize::new(clamp_to_binding_limit(
+                elements,
+                size_of::<T>(),
+                limit,
+                name,
+            ))
+        }
+        // Saturating before the clamp: the static prefix is exactly what pushes
+        // these two past the limit, so the sum is what has to be bounded.
+        let binning = clamp(
+            self.binning.saturating_add(layout.bin_data_start),
+            max_binding_size,
+            "binning",
+        );
+        let ptcl = clamp(
+            self.ptcl.saturating_add(layout.ptcl_dyn_start),
+            max_binding_size,
+            "ptcl",
+        );
+        let tile = clamp(self.tile, max_binding_size, "tile");
+        let seg_counts = clamp(self.seg_counts, max_binding_size, "seg_counts");
+        let segments = clamp(self.segments, max_binding_size, "segments");
+        let lines = clamp(self.lines, max_binding_size, "lines");
+        let blend_spill = clamp(self.blend_spill, max_binding_size, "blend_spill");
         BumpAllocatorMemory {
             binning,
             ptcl,
@@ -476,4 +538,102 @@ impl BufferSizes {
 
 const fn align_up(len: u32, alignment: u32) -> u32 {
     len + (len.wrapping_neg() & (alignment - 1))
+}
+
+#[cfg(test)]
+mod binding_limit_tests {
+    use super::{BumpAllocators, Layout, MIN_MAX_STORAGE_BUFFER_BINDING_SIZE};
+
+    /// The measured failure: 192 MB of `ptcl` against a 128 MB binding limit.
+    ///
+    /// The growth path clamps the dynamic tail, so the tail alone stayed legal
+    /// and the *sum* with `ptcl_dyn_start` did not. `create_bind_group` refused
+    /// the result, wgpu turned that into a panic, and the window came up grey.
+    #[test]
+    fn ptcl_sum_cannot_exceed_a_binding() {
+        let mut layout = Layout::default();
+        // 64 MB of static prefix, in u32 elements.
+        layout.ptcl_dyn_start = 16 << 20;
+        let bump = BumpAllocators {
+            // Another 128 MB of tail: 192 MB together, the size that panicked.
+            ptcl: 32 << 20,
+            ..Default::default()
+        };
+
+        let memory = bump.memory(&layout);
+
+        assert_eq!(
+            memory.ptcl.size_in_bytes(),
+            MIN_MAX_STORAGE_BUFFER_BINDING_SIZE,
+            "ptcl must be clamped to exactly one binding's worth"
+        );
+    }
+
+    /// A device that allows more than the floor gets to use it.
+    #[test]
+    fn a_larger_device_limit_is_honoured() {
+        let mut layout = Layout::default();
+        layout.ptcl_dyn_start = 16 << 20;
+        let bump = BumpAllocators {
+            ptcl: 32 << 20,
+            ..Default::default()
+        };
+
+        let memory = bump.memory_within(&layout, 256 << 20);
+
+        // 192 MB is under a 256 MB limit, so nothing is clamped away.
+        assert_eq!(memory.ptcl.size_in_bytes(), 192 << 20);
+    }
+
+    /// Every bump buffer, not just the two with a static prefix.
+    #[test]
+    fn each_bump_buffer_is_bounded() {
+        let layout = Layout::default();
+        let bump = BumpAllocators {
+            binning: u32::MAX,
+            ptcl: u32::MAX,
+            tile: u32::MAX,
+            seg_counts: u32::MAX,
+            segments: u32::MAX,
+            blend_spill: u32::MAX,
+            lines: u32::MAX,
+            failed: 0,
+        };
+
+        let memory = bump.memory(&layout);
+
+        for (name, size) in [
+            ("binning", memory.binning.size_in_bytes()),
+            ("ptcl", memory.ptcl.size_in_bytes()),
+            ("tile", memory.tile.size_in_bytes()),
+            ("seg_counts", memory.seg_counts.size_in_bytes()),
+            ("segments", memory.segments.size_in_bytes()),
+            ("blend_spill", memory.blend_spill.size_in_bytes()),
+            ("lines", memory.lines.size_in_bytes()),
+        ] {
+            assert!(
+                size <= MIN_MAX_STORAGE_BUFFER_BINDING_SIZE,
+                "{name} is {size} bytes, past a single binding"
+            );
+        }
+    }
+
+    /// Saturating, not wrapping: a prefix plus a tail that overflows `u32` must
+    /// clamp rather than wrap to something small and silently under-allocate.
+    #[test]
+    fn a_prefix_that_overflows_clamps_instead_of_wrapping() {
+        let mut layout = Layout::default();
+        layout.ptcl_dyn_start = u32::MAX;
+        let bump = BumpAllocators {
+            ptcl: u32::MAX,
+            ..Default::default()
+        };
+
+        let memory = bump.memory(&layout);
+
+        assert_eq!(
+            memory.ptcl.size_in_bytes(),
+            MIN_MAX_STORAGE_BUFFER_BINDING_SIZE
+        );
+    }
 }

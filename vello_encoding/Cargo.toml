@@ -29,6 +29,7 @@ name = "vello_encoding"
 
 [dependencies]
 bytemuck = { workspace = true }
+log = { workspace = true }
 skrifa = { workspace = true, features = ["std"] }
 peniko = { workspace = true, default-features = true }
 guillotiere = { workspace = true, features = ["std"] }
