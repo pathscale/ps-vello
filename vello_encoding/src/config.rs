@@ -266,6 +266,20 @@ impl RenderConfig {
         let n_path_tags = layout.path_tags_size();
         let workgroup_counts =
             WorkgroupCounts::new(&layout, width_in_tiles, height_in_tiles, n_path_tags);
+
+        // The tile buffer cannot be smaller than the target has tiles.
+        //
+        // Growth is driven by what the *previous* frame reported, so a frame
+        // that overflows is cancelled and drawn as nothing until the readback
+        // catches up two frames later. For scene complexity that is a fair
+        // trade. For the target's own size it is not: a single rectangle over a
+        // 4352x4352 target needs 272 * 272 = 73,984 tiles against an initial
+        // 32,768, so it overflows on geometry nobody would call complex, and a
+        // one-shot render has no later frame in which to recover. Taking the
+        // floor from the target removes that whole class of first-frame blank.
+        let mut bump_buffers = bump_buffers;
+        bump_buffers.tile = bump_buffers.tile.max(width_in_tiles * height_in_tiles);
+
         let buffer_sizes = BufferSizes::new(&layout, &workgroup_counts, bump_buffers);
         Self {
             gpu: ConfigUniform {

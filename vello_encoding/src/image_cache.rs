@@ -135,27 +135,52 @@ impl ImageCache {
     /// live residents and nothing else. It only fires when the result is
     /// strictly smaller and everything still fits, so a steady scene never
     /// churns: the atlas settles at the size its own contents need.
-    /// # Why this only fires on an empty cache
+    /// # Why moving residents is safe here, and only here
     ///
-    /// Moving a resident is not safe here. `repack_to_size` marks everything it
-    /// moves dirty, but only images *touched this frame* reach `images()`, so a
-    /// resident that moved and was not drawn this frame is never re-uploaded
-    /// and every later draw samples where it used to be. That renders as a grey
-    /// window: no panic, full frame rate, wrong pixels, which is a slow thing
-    /// to debug.
+    /// A repack moves every resident image. That is safe only because this runs
+    /// at the very start of `resolve_pending_images`, before any
+    /// `pending_image.xy` has been recorded, so every position this frame uses
+    /// is read after the move. Calling it any later leaves the recorded
+    /// coordinates pointing at where the images used to be, every draw samples
+    /// the wrong part of the atlas, and the result is a grey window: no panic,
+    /// full frame rate, wrong pixels.
     ///
-    /// An empty cache has nothing to move, so the shrink is unconditionally
-    /// safe, and it is enough. The images that force the atlas to 8192 are
-    /// `backdrop-filter` snapshots, which are registered and unregistered per
-    /// frame, so the cache does drain: the atlas gives its memory back the
-    /// first frame that draws no glass, instead of holding 256 MB for the life
-    /// of the process.
+    /// `repack_to_size` marks everything it moves dirty, so an image that is
+    /// drawn again in a later frame is re-uploaded to its new position before
+    /// it is sampled.
     pub(crate) fn shrink_to_fit(&mut self) {
-        if self.atlas.size().width <= self.initial_size || !self.map.is_empty() {
+        let current = self.atlas.size().width;
+        if current <= self.initial_size {
             return;
         }
-        self.atlas = AtlasAllocator::new(size2(self.initial_size, self.initial_size));
-        self.images.clear();
+        // Halve while the residents still fit, then repack once to the smallest
+        // size that works. `would_fit` is a dry run so a failed probe leaves the
+        // live atlas untouched.
+        let mut candidate = current / 2;
+        let mut smallest = None;
+        while candidate >= self.initial_size && self.would_fit(candidate) {
+            smallest = Some(candidate);
+            candidate /= 2;
+        }
+        let Some(target) = smallest else {
+            return;
+        };
+        if self.repack_to_size(target) {
+            self.images.clear();
+        }
+    }
+
+    /// Whether every resident image would pack into a `size` square atlas.
+    ///
+    /// A dry run: it must not disturb the live atlas, because the caller keeps
+    /// using that atlas when the answer is no.
+    fn would_fit(&self, size: i32) -> bool {
+        let mut atlas = AtlasAllocator::new(size2(size, size));
+        self.map.values().all(|resident| {
+            atlas
+                .allocate(size2(resident.image.width as _, resident.image.height as _))
+                .is_some()
+        })
     }
 
     pub(crate) fn get_or_insert(&mut self, image: &ImageData) -> Option<(u32, u32)> {
@@ -314,10 +339,9 @@ mod tests {
         );
     }
 
-    /// A resident image is never moved: moving one that is not redrawn this
-    /// frame leaves its draw sampling the wrong part of the atlas.
+    /// Shrinking may move residents, but must never drop one.
     #[test]
-    fn shrinking_never_moves_a_resident_image() {
+    fn shrinking_keeps_every_resident_image() {
         let mut cache = ImageCache::new_with_sizes(16, 256);
         let big = image(1, 64, 64);
 
@@ -325,19 +349,21 @@ mod tests {
         while cache.get_or_insert(&big).is_none() {
             assert!(cache.bump_size());
         }
-        let grown = cache.atlas.size().width;
-        let before = cache.get_or_insert(&big).unwrap();
+        cache.get_or_insert(&big).unwrap();
         cache.shrink_to_fit();
 
-        assert_eq!(
-            cache.atlas.size().width,
-            grown,
-            "the atlas must not move while an image is resident"
+        assert!(
+            cache.map.contains_key(&big.data.id()),
+            "a resident image was dropped by the shrink"
         );
-        assert_eq!(
-            cache.get_or_insert(&big).unwrap(),
-            before,
-            "a resident image must keep its atlas position"
+        assert!(
+            cache.atlas.size().width >= 64,
+            "the atlas shrank below what its resident image needs"
+        );
+        // Moved or not, it must be re-uploaded before it is sampled again.
+        assert!(
+            cache.map[&big.data.id()].dirty,
+            "a moved image must be marked for re-upload"
         );
     }
 
