@@ -736,14 +736,55 @@ impl Renderer {
             // Ensure that we have the bump buffer from the rendering two frames ago
             // The previous frame will have been cancelled if that is the case
 
-            // Warning: Blocks!
-            // `MaintainBase` became `PollType` in wgpu 25. Same meaning: block
-            // until this particular submission has completed and its callbacks
-            // have run, so the mapped bump buffer below is real data.
-            let _ = device.poll(wgpu::PollType::Wait {
-                submission_index: Some(idx),
-                timeout: None,
-            });
+            /*
+             * Blocks, but only when it still has to.
+             *
+             * `MaintainBase` became `PollType` in wgpu 25. Same meaning: block
+             * until this particular submission has completed and its callbacks
+             * have run, so the mapped bump buffer read below is real data.
+             *
+             * `completed` is set by this buffer's own `map_async` callback, and
+             * an embedder that polls each frame will already have run it:
+             * `anyrender_vello`'s window renderer calls
+             * `device.poll(PollType::Poll)` once per frame precisely because
+             * "a non-blocking poll still advances mapping callbacks and
+             * resource retirement". By the time the submission from *two*
+             * frames ago is examined here, that has normally happened, and the
+             * wait is then pure latency paid on whichever thread is rendering.
+             *
+             * That thread is the UI thread whenever the page has a
+             * `backdrop-filter`, and this is the beachball. Sampled on the
+             * consuming app: 3249 of 3281 main-thread samples inside
+             * `nanosleep`, under `wgpu_hal::metal::Device::wait`, with the
+             * backdrop pass count already reduced to two and the window
+             * otherwise idle at `frames=2`. Cutting passes cannot reach it,
+             * because the cost is per wait rather than per pass.
+             *
+             * So the flag is consulted first, and the wait is skipped only when
+             * the data it exists to produce is already there. Two earlier
+             * attempts at this are worth not repeating, and neither mechanism
+             * is reintroduced:
+             *
+             *   - `PollType::Poll` instead of `Wait` never blocks, but
+             *     `is_queue_empty()` asks about the *whole* queue, so under
+             *     continuous rendering the reallocation check never passed and
+             *     the renderer thrashed. This consults a per-submission flag
+             *     rather than a queue-wide predicate.
+             *   - Dropping the wait behind a timeout let a texture be recycled
+             *     while a render still referenced it, panicking with "tried to
+             *     draw an invalid empty image". Nothing is skipped here that
+             *     has not already reported completion, so no read races a
+             *     submission that is still in flight.
+             *
+             * When the flag is false the wait happens exactly as before, so the
+             * worst case is the previous behaviour.
+             */
+            if !completed.load(Ordering::Acquire) {
+                let _ = device.poll(wgpu::PollType::Wait {
+                    submission_index: Some(idx),
+                    timeout: None,
+                });
+            }
 
             if completed.swap(false, Ordering::Acquire) {
                 {
