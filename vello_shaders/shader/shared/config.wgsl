@@ -20,6 +20,9 @@ struct Config {
     // To reduce the number of bindings, info and bin data are combined
     // into one buffer.
     bin_data_start: u32,
+    // Each tile gets a pre-allocated area of ptcl; the dynamically allocated 
+    // section is after this.
+    ptcl_dyn_start: u32,
 
     // offsets within scene buffer (in u32 units)
     pathtag_base: u32,
@@ -30,6 +33,9 @@ struct Config {
 
     transform_base: u32,
     style_base: u32,
+
+    // Whether this stage has been cancelled at startup. 0 means uncancelled.
+    cancelled: u32,
 
     // Sizes of bump allocated buffers (in element size units)
     lines_size: u32,
