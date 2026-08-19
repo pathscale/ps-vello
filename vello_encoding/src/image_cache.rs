@@ -102,14 +102,38 @@ impl ImageCache {
         }
     }
 
+    /// Grow the atlas, doubling the shorter side each step.
+    ///
+    /// # Why not square
+    ///
+    /// The atlas used to be square and doubled both sides at once, which wastes
+    /// half the growth whenever the content is wider than it is tall. Full-frame
+    /// `backdrop-filter` snapshots are exactly that: two 2688x1800 rects need
+    /// 5376x1800, which no 4096x4096 square can hold, so the atlas jumped to
+    /// 8192x8192 and 256 MB to store 19 MB of pixels twice.
+    ///
+    /// Doubling the shorter side reaches 8192x4096 instead, which fits the same
+    /// content in half the memory, and nothing downstream needs a square: the
+    /// renderer already sizes its atlas texture from `images.width` and
+    /// `images.height` independently.
     pub(crate) fn bump_size(&mut self) -> bool {
-        let mut new_size = self.atlas.size().width * 2;
-        while new_size <= self.max_size {
-            if self.repack_to_size(new_size) {
+        let (mut width, mut height) = {
+            let size = self.atlas.size();
+            (size.width, size.height)
+        };
+        while width <= self.max_size && height <= self.max_size {
+            if width <= height {
+                width *= 2;
+            } else {
+                height *= 2;
+            }
+            if width > self.max_size || height > self.max_size {
+                return false;
+            }
+            if self.repack_to(width, height) {
                 self.images.clear();
                 return true;
             }
-            new_size *= 2;
         }
         false
     }
@@ -149,33 +173,45 @@ impl ImageCache {
     /// drawn again in a later frame is re-uploaded to its new position before
     /// it is sampled.
     pub(crate) fn shrink_to_fit(&mut self) {
-        let current = self.atlas.size().width;
-        if current <= self.initial_size {
+        let size = self.atlas.size();
+        let (mut width, mut height) = (size.width, size.height);
+        if width <= self.initial_size && height <= self.initial_size {
             return;
         }
-        // Halve while the residents still fit, then repack once to the smallest
-        // size that works. `would_fit` is a dry run so a failed probe leaves the
-        // live atlas untouched.
-        let mut candidate = current / 2;
-        let mut smallest = None;
-        while candidate >= self.initial_size && self.would_fit(candidate) {
-            smallest = Some(candidate);
-            candidate /= 2;
+        // Halve the longer side while everything still fits, mirroring the way
+        // `bump_size` grows. `would_fit` is a dry run, so a failed probe leaves
+        // the live atlas untouched.
+        let mut best = None;
+        loop {
+            let (next_width, next_height) = if width >= height {
+                (width / 2, height)
+            } else {
+                (width, height / 2)
+            };
+            if next_width < self.initial_size || next_height < self.initial_size {
+                break;
+            }
+            if !self.would_fit(next_width, next_height) {
+                break;
+            }
+            best = Some((next_width, next_height));
+            width = next_width;
+            height = next_height;
         }
-        let Some(target) = smallest else {
+        let Some((target_width, target_height)) = best else {
             return;
         };
-        if self.repack_to_size(target) {
+        if self.repack_to(target_width, target_height) {
             self.images.clear();
         }
     }
 
-    /// Whether every resident image would pack into a `size` square atlas.
+    /// Whether every resident image would pack into a `width` by `height` atlas.
     ///
     /// A dry run: it must not disturb the live atlas, because the caller keeps
     /// using that atlas when the answer is no.
-    fn would_fit(&self, size: i32) -> bool {
-        let mut atlas = AtlasAllocator::new(size2(size, size));
+    fn would_fit(&self, width: i32, height: i32) -> bool {
+        let mut atlas = AtlasAllocator::new(size2(width, height));
         self.map.values().all(|resident| {
             atlas
                 .allocate(size2(resident.image.width as _, resident.image.height as _))
@@ -255,7 +291,11 @@ impl ImageCache {
     }
 
     fn repack_to_size(&mut self, size: i32) -> bool {
-        let mut atlas = AtlasAllocator::new(size2(size, size));
+        self.repack_to(size, size)
+    }
+
+    fn repack_to(&mut self, width: i32, height: i32) -> bool {
+        let mut atlas = AtlasAllocator::new(size2(width, height));
         let mut entries: Vec<_> = self.map.iter().collect();
         entries.sort_by_key(|(id, _)| *id);
         let mut map = HashMap::with_capacity(self.map.len());
