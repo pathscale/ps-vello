@@ -12,6 +12,8 @@ thm = "thm"
 wdth = "wdth"
 canva = "canva"
 ArthurCose = "ArthurCose"
+# The image format, plural. Read as a misspelling of "ONs" otherwise.
+PNGs = "PNGs"
 
 # Match Inside a Word - Case Insensitive
 [default.extend-words]
