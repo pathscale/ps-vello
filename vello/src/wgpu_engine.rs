@@ -118,9 +118,47 @@ struct BufferProperties {
     name: &'static str,
 }
 
+/// How many spare buffers one size class keeps.
+///
+/// Two frames can be in flight, so a class needs two spares to hand out without
+/// allocating. Anything past that is a buffer nothing asked for.
+const POOL_SPARES_PER_CLASS: usize = 2;
+
+/// How many frames a size class may go unused before it is dropped.
+///
+/// Long enough that switching between two screens does not churn, short enough
+/// that a class the app has stopped using does not sit on GPU memory for the
+/// life of the process. At 120Hz this is about two seconds.
+const POOL_CLASS_IDLE_FRAMES: u64 = 240;
+
+/// Spare GPU buffers, keyed by what makes one reusable.
+///
+/// # Why this is bounded
+///
+/// The pool was a plain `HashMap<BufferProperties, Vec<Buffer>>` that only ever
+/// grew: a returned buffer was pushed and nothing ever popped a class or capped
+/// a bucket. That is invisible while buffer sizes are fixed, because there is
+/// one class per buffer and it is reused forever.
+///
+/// Robust dynamic memory made it visible. Sizes now grow by 5/4 on overflow and
+/// `size_class` quantizes that, so a scene that grows walks through a ladder of
+/// classes: 12, 16, 24, 32, 48, 64, 96, 128 MB. Each class keeps every buffer
+/// ever returned to it, so the ladder stays resident all the way up, and the
+/// process holds the sum rather than the peak. Measured on this app, idle,
+/// `AGXG16XFamilyBuffer` climbed 2152 -> 2328 -> 2797 objects over 40 seconds
+/// with nothing on screen changing.
 #[derive(Default)]
 struct ResourcePool {
-    bufs: HashMap<BufferProperties, Vec<Buffer>>,
+    bufs: HashMap<BufferProperties, PoolClass>,
+    /// Frames observed, which is what "unused for a while" is measured in.
+    frame: u64,
+}
+
+/// One size class's spares, and when they were last wanted.
+#[derive(Default)]
+struct PoolClass {
+    spares: Vec<Buffer>,
+    last_used_frame: u64,
 }
 
 /// The transient bind map contains short-lifetime resources.
@@ -770,12 +808,7 @@ impl WgpuEngine {
             if let Some(buf) = self.bind_map.buf_map.remove(&id)
                 && let MaterializedBuffer::Gpu(gpu_buf) = buf.buffer
             {
-                let props = BufferProperties {
-                    size: gpu_buf.size(),
-                    usages: gpu_buf.usage(),
-                    name: buf.label,
-                };
-                self.pool.bufs.entry(props).or_default().push(gpu_buf);
+                self.pool.return_buf(gpu_buf, buf.label);
             }
         }
         for id in free_images {
@@ -784,6 +817,9 @@ impl WgpuEngine {
                 texture.destroy();
             }
         }
+        // One recording is one frame's work, which is the clock the pool ages
+        // its size classes against.
+        self.pool.end_frame();
         Ok(submission_index)
     }
 
@@ -1011,10 +1047,12 @@ impl ResourcePool {
             usages: usage,
             name,
         };
-        if let Some(buf_vec) = self.bufs.get_mut(&props)
-            && let Some(buf) = buf_vec.pop()
-        {
-            return buf;
+        let frame = self.frame;
+        if let Some(class) = self.bufs.get_mut(&props) {
+            class.last_used_frame = frame;
+            if let Some(buf) = class.spares.pop() {
+                return buf;
+            }
         }
         device.create_buffer(&wgpu::BufferDescriptor {
             label: Some(name),
@@ -1022,6 +1060,39 @@ impl ResourcePool {
             usage,
             mapped_at_creation: false,
         })
+    }
+
+    /// Take a buffer back, keeping only as many spares as a class can use.
+    ///
+    /// A buffer past the cap is dropped here rather than pushed. `wgpu::Buffer`
+    /// releases its GPU allocation on drop, so this is what actually returns
+    /// the memory: without it every buffer the renderer ever finished with
+    /// stayed resident for the life of the process.
+    fn return_buf(&mut self, buf: Buffer, label: &'static str) {
+        let props = BufferProperties {
+            size: buf.size(),
+            usages: buf.usage(),
+            name: label,
+        };
+        let frame = self.frame;
+        let class = self.bufs.entry(props).or_default();
+        class.last_used_frame = frame;
+        if class.spares.len() < POOL_SPARES_PER_CLASS {
+            class.spares.push(buf);
+        }
+    }
+
+    /// Advance a frame and drop size classes nothing has asked for.
+    ///
+    /// Growth walks up a ladder of size classes and never walks back down, so
+    /// without this the classes below the current peak keep their spares alive
+    /// forever and the process holds the sum of the ladder instead of its peak.
+    fn end_frame(&mut self) {
+        self.frame += 1;
+        let frame = self.frame;
+        self.bufs.retain(|_, class| {
+            frame.saturating_sub(class.last_used_frame) <= POOL_CLASS_IDLE_FRAMES
+        });
     }
 
     /// Quantize a size up to the nearest size class.
