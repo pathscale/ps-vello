@@ -509,6 +509,18 @@ impl Resolver {
     }
 
     fn resolve_pending_images(&mut self) {
+        // Before anything records a position, never after.
+        //
+        // Growth is one way without this: a frame that needed a large atlas
+        // ratchets it up and every later frame keeps paying, which on a
+        // `backdrop-filter` pass means holding a 256 MB atlas for the life of
+        // the process. But a repack moves every resident image, so doing it
+        // once `pending_image.xy` has been filled in leaves those coordinates
+        // pointing at where the images used to be, and every one of them then
+        // samples the wrong part of the atlas. That renders as a grey window,
+        // with no panic and a full frame rate, which is a slow thing to debug.
+        // Here the positions are all recorded after the move.
+        self.image_cache.shrink_to_fit();
         'outer: loop {
             self.image_cache.restart_resolve_pass();
             // Loop over the images, attempting to allocate them all into the atlas.

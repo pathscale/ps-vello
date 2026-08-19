@@ -36,6 +36,9 @@ struct ResidentImage {
 
 pub(crate) struct ImageCache {
     atlas: AtlasAllocator,
+    /// Side length the atlas starts at, and the floor [`Self::shrink_to_fit`]
+    /// will not go below.
+    initial_size: i32,
     /// Maximum side length for the square image atlas texture.
     max_size: i32,
     /// Monotonic counter for resolve passes, used to track when resident images were last used.
@@ -65,6 +68,7 @@ impl ImageCache {
     fn new_with_sizes(initial_size: i32, max_size: i32) -> Self {
         Self {
             atlas: AtlasAllocator::new(size2(initial_size, initial_size)),
+            initial_size,
             max_size,
             generation: 0,
             evicted_in_resolve: 0,
@@ -108,6 +112,50 @@ impl ImageCache {
             new_size *= 2;
         }
         false
+    }
+
+    /// Give the atlas back once the images that forced it to grow are gone.
+    ///
+    /// # Why this exists
+    ///
+    /// `bump_size` doubles a square `Rgba8` atlas and nothing ever halved it,
+    /// so the atlas ratcheted to the high water mark of the session and stayed
+    /// there for the life of the process. The ceiling is 8192, which is
+    /// 8192 * 8192 * 4 = 256 MB.
+    ///
+    /// That ceiling is reachable in ordinary use. A `backdrop-filter` pass
+    /// registers its full-frame snapshot as an image, and two full-viewport
+    /// rects (2688x1800 on this display) cannot be packed into 4096x4096, so a
+    /// frame with two backdrop boundaries escalates 1024 -> 2048 -> 4096 ->
+    /// 8192 and the process then holds a quarter gigabyte of atlas forever.
+    /// Measured on AgencyZero, that single 258 MB allocation was the largest
+    /// item in a 1 GB graphics footprint, and it was present in every build.
+    ///
+    /// Shrinking is the same repack as growing, so it costs a repack of the
+    /// live residents and nothing else. It only fires when the result is
+    /// strictly smaller and everything still fits, so a steady scene never
+    /// churns: the atlas settles at the size its own contents need.
+    /// # Why this only fires on an empty cache
+    ///
+    /// Moving a resident is not safe here. `repack_to_size` marks everything it
+    /// moves dirty, but only images *touched this frame* reach `images()`, so a
+    /// resident that moved and was not drawn this frame is never re-uploaded
+    /// and every later draw samples where it used to be. That renders as a grey
+    /// window: no panic, full frame rate, wrong pixels, which is a slow thing
+    /// to debug.
+    ///
+    /// An empty cache has nothing to move, so the shrink is unconditionally
+    /// safe, and it is enough. The images that force the atlas to 8192 are
+    /// `backdrop-filter` snapshots, which are registered and unregistered per
+    /// frame, so the cache does drain: the atlas gives its memory back the
+    /// first frame that draws no glass, instead of holding 256 MB for the life
+    /// of the process.
+    pub(crate) fn shrink_to_fit(&mut self) {
+        if self.atlas.size().width <= self.initial_size || !self.map.is_empty() {
+            return;
+        }
+        self.atlas = AtlasAllocator::new(size2(self.initial_size, self.initial_size));
+        self.images.clear();
     }
 
     pub(crate) fn get_or_insert(&mut self, image: &ImageData) -> Option<(u32, u32)> {
@@ -230,6 +278,85 @@ mod tests {
         assert_eq!(cache.atlas.size().width, 32);
         cache.begin_resolve();
         assert_eq!(cache.atlas.size().width, 32);
+    }
+
+    /// The atlas gives its memory back once every image is gone.
+    ///
+    /// Without this the atlas ratchets to the session's high water mark and
+    /// holds it forever: on a `backdrop-filter` pass that is a 256 MB texture
+    /// kept for the life of the process.
+    #[test]
+    fn atlas_returns_to_the_floor_once_the_cache_drains() {
+        let mut cache = ImageCache::new_with_sizes(16, 256);
+        let big = image(1, 96, 96);
+
+        cache.begin_resolve();
+        while cache.get_or_insert(&big).is_none() {
+            assert!(cache.bump_size(), "the atlas should reach a size that fits");
+        }
+        let grown = cache.atlas.size().width;
+        assert!(grown >= 96, "a 96px image needs at least a 96px atlas");
+        cache.finish_resolve();
+
+        // Frames that draw nothing, which is what lets the big image go stale.
+        for _ in 0..=EVICT_AFTER_GENERATIONS {
+            cache.begin_resolve();
+            cache.evict_stale_entries();
+            cache.finish_resolve();
+        }
+        cache.shrink_to_fit();
+
+        assert!(cache.map.is_empty(), "the cache should have drained");
+        assert_eq!(
+            cache.atlas.size().width,
+            16,
+            "a drained cache should give the atlas back to the floor"
+        );
+    }
+
+    /// A resident image is never moved: moving one that is not redrawn this
+    /// frame leaves its draw sampling the wrong part of the atlas.
+    #[test]
+    fn shrinking_never_moves_a_resident_image() {
+        let mut cache = ImageCache::new_with_sizes(16, 256);
+        let big = image(1, 64, 64);
+
+        cache.begin_resolve();
+        while cache.get_or_insert(&big).is_none() {
+            assert!(cache.bump_size());
+        }
+        let grown = cache.atlas.size().width;
+        let before = cache.get_or_insert(&big).unwrap();
+        cache.shrink_to_fit();
+
+        assert_eq!(
+            cache.atlas.size().width,
+            grown,
+            "the atlas must not move while an image is resident"
+        );
+        assert_eq!(
+            cache.get_or_insert(&big).unwrap(),
+            before,
+            "a resident image must keep its atlas position"
+        );
+    }
+
+    /// A steady scene must not churn: nothing to give back means no work.
+    #[test]
+    fn shrinking_is_a_no_op_at_the_initial_size() {
+        let mut cache = ImageCache::new_with_sizes(32, 256);
+        let small = image(3, 8, 8);
+
+        cache.begin_resolve();
+        let before = cache.get_or_insert(&small).unwrap();
+        cache.shrink_to_fit();
+
+        assert_eq!(cache.atlas.size().width, 32);
+        assert_eq!(
+            cache.get_or_insert(&small).unwrap(),
+            before,
+            "a no-op shrink must not move a resident image"
+        );
     }
 
     #[test]
