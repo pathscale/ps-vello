@@ -498,6 +498,20 @@ impl Renderer {
         texture: &TextureView,
         params: &RenderParams,
     ) -> Result<Option<Buffer>> {
+        /*
+         * Reallocate from the frame two back, before sizing this one.
+         *
+         * This is what closes the loop. `bump_sizes` starts small and only
+         * grows when a frame reports that it ran out, so without this call the
+         * initial sizes would be the only sizes: a scene that needed more than
+         * them would fail to allocate every frame, forever.
+         *
+         * Two frames rather than one because the readback has to be mapped, and
+         * waiting on the immediately preceding submission would stall the
+         * pipeline it is trying to keep full.
+         */
+        let completed = self.block_on_bump_and_reallocate(device);
+
         let (mut recording, target, bump_buf) = render::render_full(
             scene,
             &mut self.resolver,
@@ -535,7 +549,7 @@ impl Renderer {
             ];
             &gpu_external
         };
-        self.engine.run_recording(
+        let submission_index = self.engine.run_recording(
             device,
             queue,
             &recording,
@@ -556,10 +570,37 @@ impl Renderer {
             }
         }
 
-        // The bump buffer, handed back so the caller can read what this frame
-        // actually needed and size the next one from it. `None` for CPU
-        // shaders, where it was freed above rather than retained.
+        /*
+         * Queue this frame's bump buffer for readback, and remember which
+         * submission it belongs to.
+         *
+         * The map is asynchronous and the flag is what says it finished:
+         * `block_on_bump_and_reallocate` waits on `submission_index`, checks
+         * the flag, and only then reads the mapped range. Shifting
+         * `previous` into `previouser` is what makes it a frame *two* back,
+         * which is far enough that the wait is already satisfied and does not
+         * stall the pipeline.
+         */
         let bump_download = self.engine.take_download(bump_buf);
+        if let Some(download) = &bump_download {
+            let signal = completed.clone();
+            download
+                .slice(..)
+                .map_async(wgpu::MapMode::Read, move |res| match res {
+                    Ok(()) => signal.store(true, Ordering::Release),
+                    Err(error) => log::warn!("could not map the bump buffer: {error}"),
+                });
+            self.previouser_submission =
+                self.previous_submission
+                    .replace((submission_index, download.clone(), completed));
+        } else {
+            // CPU shaders keep no bump buffer, so there is nothing to read back
+            // and the chain simply advances.
+            self.previouser_submission = self.previous_submission.take();
+        }
+
+        // Handed back as well, so an embedder that wants the numbers can have
+        // them without reaching into the renderer.
         Ok(bump_download)
     }
 
@@ -651,8 +692,44 @@ impl Renderer {
         self.override_image(&handle, None);
     }
 
+    /// Grow an element count by 25%, without exceeding what the device can bind.
+    ///
+    /// The upstream branch left this as a TODO ("We should have awareness of the
+    /// maximum binding size supported by the device") and it is not optional: a
+    /// scene that keeps reporting overflow grows the buffer every frame until
+    /// `create_bind_group` refuses it. Measured on a chat client, `ptcl` reached
+    /// 192 MB against a 128 MB `max_storage_buffer_binding_size`, and wgpu's
+    /// validation error is a panic, so the window came up grey.
+    ///
+    /// Clamping means a scene too large for the device draws with what the
+    /// device allows rather than taking the process down. The shaders already
+    /// report the shortfall through `bump.failed`, so the frame degrades
+    /// instead of lying.
+    fn grow_within_binding_limit(
+        needed: u32,
+        current: u32,
+        element_size: u32,
+        max_binding_size: u64,
+        name: &str,
+    ) -> u32 {
+        let wanted = needed.saturating_mul(5) / 4;
+        // In elements, and saturating: a device reporting a limit above
+        // `u32::MAX` elements is not a reason to wrap.
+        let ceiling =
+            u32::try_from(max_binding_size / u64::from(element_size.max(1))).unwrap_or(u32::MAX);
+        if wanted > ceiling {
+            log::warn!(
+                "{name} wants {wanted} elements but the device binds at most {ceiling}; \
+                 clamping, so this frame will be missing content"
+            );
+            return ceiling.max(current);
+        }
+        wanted
+    }
+
     /// Wait for the frame "two frames ago"'s bump buffer to be available, and reallocate if so.
     fn block_on_bump_and_reallocate(&mut self, device: &Device) -> Arc<AtomicBool> {
+        let max_binding_size = device.limits().max_storage_buffer_binding_size;
         let buffer_completed = if let Some((idx, bump, completed)) =
             self.previouser_submission.take()
         {
@@ -695,7 +772,13 @@ impl Renderer {
 
                             if data.binning > self.bump_sizes.binning {
                                 changed = true;
-                                let new_size = data.binning * 5 / 4;
+                                let new_size = Self::grow_within_binding_limit(
+                                    data.binning,
+                                    self.bump_sizes.binning,
+                                    4,
+                                    max_binding_size,
+                                    "binning",
+                                );
                                 log::debug!(
                                     "Resizing binning to {:?} (Needed {:?}, had {:?})",
                                     new_size,
@@ -706,7 +789,13 @@ impl Renderer {
                             }
                             if data.lines > self.bump_sizes.lines {
                                 changed = true;
-                                let new_size = data.lines * 5 / 4;
+                                let new_size = Self::grow_within_binding_limit(
+                                    data.lines,
+                                    self.bump_sizes.lines,
+                                    16,
+                                    max_binding_size,
+                                    "lines",
+                                );
                                 log::debug!(
                                     "Resizing lines to {:?} (Needed {:?}, had {:?})",
                                     new_size,
@@ -719,7 +808,13 @@ impl Renderer {
                             if data.ptcl > self.bump_sizes.ptcl {
                                 changed = true;
                                 // TODO: At 5/4, this doesn't work very well
-                                let new_size = data.ptcl * 5 / 4;
+                                let new_size = Self::grow_within_binding_limit(
+                                    data.ptcl,
+                                    self.bump_sizes.ptcl,
+                                    4,
+                                    max_binding_size,
+                                    "ptcl",
+                                );
                                 log::debug!(
                                     "Resizing ptcl to {:?} (Needed {:?}, had {:?})",
                                     new_size,
@@ -730,7 +825,13 @@ impl Renderer {
                             }
                             if data.seg_counts > self.bump_sizes.seg_counts {
                                 changed = true;
-                                let new_size = data.seg_counts * 5 / 4;
+                                let new_size = Self::grow_within_binding_limit(
+                                    data.seg_counts,
+                                    self.bump_sizes.seg_counts,
+                                    16,
+                                    max_binding_size,
+                                    "seg_counts",
+                                );
                                 log::debug!(
                                     "Resizing seg_counts to {:?} (Needed {:?}, had {:?})",
                                     new_size,
@@ -741,7 +842,13 @@ impl Renderer {
                             }
                             if data.tile > self.bump_sizes.tile {
                                 changed = true;
-                                let new_size = data.tile * 5 / 4;
+                                let new_size = Self::grow_within_binding_limit(
+                                    data.tile,
+                                    self.bump_sizes.tile,
+                                    16,
+                                    max_binding_size,
+                                    "tile",
+                                );
                                 log::debug!(
                                     "Resizing tile to {:?} (Needed {:?}, had {:?})",
                                     new_size,
@@ -752,7 +859,13 @@ impl Renderer {
                             }
                             if data.segments > self.bump_sizes.segments {
                                 changed = true;
-                                let new_size = data.segments * 5 / 4;
+                                let new_size = Self::grow_within_binding_limit(
+                                    data.segments,
+                                    self.bump_sizes.segments,
+                                    16,
+                                    max_binding_size,
+                                    "segments",
+                                );
                                 log::debug!(
                                     "Resizing segments to {:?} (Needed {:?}, had {:?})",
                                     new_size,
@@ -763,7 +876,13 @@ impl Renderer {
                             }
                             if data.blend_spill > self.bump_sizes.blend_spill {
                                 changed = true;
-                                let new_size = data.blend_spill * 5 / 4;
+                                let new_size = Self::grow_within_binding_limit(
+                                    data.blend_spill,
+                                    self.bump_sizes.blend_spill,
+                                    4,
+                                    max_binding_size,
+                                    "blend_spill",
+                                );
                                 log::debug!(
                                     "Resizing blend_spill to {:?} (Needed {:?}, had {:?})",
                                     new_size,
@@ -1002,5 +1121,64 @@ impl<'a> DebugDownloads<'a> {
         lines.map_async(wgpu::MapMode::Read, move |v| sender.send(v).unwrap());
         receiver.receive().await.expect("channel was closed")?;
         Ok(Self { lines })
+    }
+}
+
+/// Buffer growth must stop at what the device can actually bind.
+///
+/// The upstream branch left this as a TODO, and it is not cosmetic: a scene
+/// that keeps reporting overflow grows its buffers by 25% every frame until
+/// `create_bind_group` refuses one, and wgpu turns that refusal into a panic.
+/// Measured on a chat client, `ptcl` reached 192 MB against a 128 MB
+/// `max_storage_buffer_binding_size` and the window came up grey.
+#[cfg(all(test, feature = "wgpu"))]
+mod binding_limit_tests {
+    use super::Renderer;
+
+    /// 128 MB, which is wgpu's default and what this machine reports.
+    const LIMIT: u64 = 128 * 1024 * 1024;
+
+    #[test]
+    fn ordinary_growth_is_a_quarter_more() {
+        assert_eq!(
+            Renderer::grow_within_binding_limit(1000, 800, 4, LIMIT, "ptcl"),
+            1250,
+        );
+    }
+
+    /// The failure that grey-screened the app: 48M u32 elements is 192 MB.
+    #[test]
+    fn growth_stops_at_the_devices_binding_limit() {
+        let needed = 48 * 1024 * 1024;
+        let grown = Renderer::grow_within_binding_limit(needed, 1 << 17, 4, LIMIT, "ptcl");
+        assert!(
+            u64::from(grown) * 4 <= LIMIT,
+            "grew to {grown} elements, which is {} bytes against a {LIMIT} byte limit",
+            u64::from(grown) * 4,
+        );
+        assert_eq!(
+            grown,
+            (LIMIT / 4) as u32,
+            "should clamp to exactly the limit"
+        );
+    }
+
+    /// Element size is part of the ceiling: a 16 byte element hits the limit
+    /// four times sooner than a `u32` does.
+    #[test]
+    fn the_ceiling_accounts_for_the_element_size() {
+        let huge = u32::MAX / 8;
+        let tiles = Renderer::grow_within_binding_limit(huge, 1 << 15, 16, LIMIT, "tile");
+        assert_eq!(tiles, (LIMIT / 16) as u32);
+        assert!(u64::from(tiles) * 16 <= LIMIT);
+    }
+
+    /// Clamping must never shrink below what is already allocated, or a frame
+    /// that is coping would be made worse by one that is not.
+    #[test]
+    fn clamping_never_reduces_the_current_size() {
+        let current = (LIMIT / 4) as u32;
+        let grown = Renderer::grow_within_binding_limit(u32::MAX, current, 4, LIMIT, "ptcl");
+        assert!(grown >= current);
     }
 }
