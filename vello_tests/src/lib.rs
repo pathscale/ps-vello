@@ -99,9 +99,31 @@ pub async fn render_then_debug(scene: &Scene, params: &TestParams) -> Result<Ima
     Ok(image)
 }
 
+/// Render several scenes through **one** renderer and return the last frame.
+///
+/// [`get_scene_image`] builds a fresh [`vello::Renderer`] per call, so any
+/// defect that needs state carried between frames is invisible to it. The image
+/// atlas is exactly that kind of state: it grows, and a repack moves every
+/// resident image, so a bug there only shows once a second frame draws against
+/// an atlas the first frame reshaped.
+pub async fn get_scene_images_sequence(
+    params: &TestParams,
+    scenes: &[Scene],
+) -> Result<ImageData, anyhow::Error> {
+    assert!(!scenes.is_empty(), "a sequence needs at least one scene");
+    get_scene_image_inner(params, scenes).await
+}
+
 pub async fn get_scene_image(
     params: &TestParams,
     scene: &Scene,
+) -> Result<ImageData, anyhow::Error> {
+    get_scene_image_inner(params, std::slice::from_ref(scene)).await
+}
+
+async fn get_scene_image_inner(
+    params: &TestParams,
+    scenes: &[Scene],
 ) -> Result<ImageData, anyhow::Error> {
     let mut context = RenderContext::new();
     let device_id = context
@@ -145,9 +167,13 @@ pub async fn get_scene_image(
         view_formats: &[],
     });
     let view = target.create_view(&wgpu::TextureViewDescriptor::default());
-    renderer
-        .render_to_texture(device, queue, scene, &view, &render_params)
-        .or_else(|_| bail!("Got non-Send/Sync error from rendering"))?;
+    // Every frame goes through the same renderer, so the atlas and the buffer
+    // pool carry over exactly as they do in a real application.
+    for scene in scenes {
+        renderer
+            .render_to_texture(device, queue, scene, &view, &render_params)
+            .or_else(|_| bail!("Got non-Send/Sync error from rendering"))?;
+    }
     let padded_byte_width = (width * 4).next_multiple_of(256);
     let buffer_size = padded_byte_width as u64 * height as u64;
     let buffer = device.create_buffer(&BufferDescriptor {
