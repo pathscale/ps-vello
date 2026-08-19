@@ -65,7 +65,7 @@ impl Scene {
     /// Tally up the bump allocator estimate for the current state of the encoding,
     /// taking into account an optional `transform` applied to the entire scene.
     #[cfg(feature = "bump_estimate")]
-    pub fn bump_estimate(&self, transform: Option<Affine>) -> BumpAllocatorMemory {
+    pub fn bump_estimate(&self, transform: Option<Affine>) -> BumpAllocators {
         self.estimator
             .tally(transform.as_ref().map(Transform::from_kurbo).as_ref())
     }

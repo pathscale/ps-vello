@@ -50,7 +50,7 @@ pub use binning::BinHeader;
 pub use clip::{Clip, ClipBbox, ClipBic, ClipElement};
 pub use config::{
     BufferSize, BufferSizes, BumpAllocatorMemory, BumpAllocators, ConfigUniform, IndirectCount,
-    RenderConfig, WorkgroupCounts, WorkgroupSize,
+    PTCL_INITIAL_ALLOC, RenderConfig, WorkgroupCounts, WorkgroupSize,
 };
 pub use draw::{
     DRAW_INFO_FLAGS_FILL_RULE_BIT, DrawBbox, DrawBeginClip, DrawBlurRoundedRect, DrawColor,
