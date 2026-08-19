@@ -1,5 +1,5 @@
 [package]
-name = "vello_shaders"
+name = "ps-vello-shaders"
 version.workspace = true # We mimic Vello's version
 description = "Vello infrastructure to preprocess and cross-compile shaders at compile time."
 categories = ["rendering", "graphics"]
@@ -28,6 +28,9 @@ cpu = ["dep:bytemuck", "dep:vello_encoding"]
 
 [lints]
 workspace = true
+
+[lib]
+name = "vello_shaders"
 
 [dependencies]
 bytemuck = { workspace = true, optional = true }
