@@ -385,7 +385,7 @@ impl WgpuEngine {
         external_resources: &[ExternalResource<'_>],
         label: &'static str,
         #[cfg(feature = "wgpu-profiler")] profiler: &mut wgpu_profiler::GpuProfiler,
-    ) -> Result<()> {
+    ) -> Result<wgpu::SubmissionIndex> {
         let mut free_bufs: HashSet<ResourceId> = HashSet::default();
         let mut free_images: HashSet<ResourceId> = HashSet::default();
         let mut transient_map = TransientBindMap::new(external_resources);
@@ -762,7 +762,10 @@ impl WgpuEngine {
         // TODO: This only actually needs to happen once per frame, but run_recording happens two or three times
         #[cfg(feature = "wgpu-profiler")]
         profiler.resolve_queries(&mut encoder);
-        queue.submit(Some(encoder.finish()));
+        // The index is returned so a caller can wait on exactly this submission
+        // later, which is how the bump buffer is read back a frame or two after
+        // the frame that produced it.
+        let submission_index = queue.submit(Some(encoder.finish()));
         for id in free_bufs {
             if let Some(buf) = self.bind_map.buf_map.remove(&id)
                 && let MaterializedBuffer::Gpu(gpu_buf) = buf.buffer
@@ -781,7 +784,7 @@ impl WgpuEngine {
                 texture.destroy();
             }
         }
-        Ok(())
+        Ok(submission_index)
     }
 
     pub fn get_download(&self, buf: BufferProxy) -> Option<&Buffer> {
