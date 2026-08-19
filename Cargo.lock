@@ -1498,8 +1498,8 @@ dependencies = [
  "futures-intrusive",
  "png",
  "pollster",
+ "ps-vello",
  "scenes",
- "vello",
 ]
 
 [[package]]
@@ -3262,6 +3262,46 @@ dependencies = [
 ]
 
 [[package]]
+name = "ps-vello"
+version = "0.10.0"
+dependencies = [
+ "bytemuck",
+ "futures-intrusive",
+ "log",
+ "peniko",
+ "png",
+ "ps-vello-encoding",
+ "ps-vello-shaders",
+ "skrifa 0.44.0",
+ "static_assertions",
+ "thiserror 2.0.18",
+ "wgpu",
+ "wgpu-profiler",
+]
+
+[[package]]
+name = "ps-vello-encoding"
+version = "0.10.0"
+dependencies = [
+ "bytemuck",
+ "guillotiere",
+ "peniko",
+ "skrifa 0.44.0",
+ "smallvec",
+]
+
+[[package]]
+name = "ps-vello-shaders"
+version = "0.10.0"
+dependencies = [
+ "bytemuck",
+ "log",
+ "naga",
+ "ps-vello-encoding",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "pxfm"
 version = "0.1.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3587,10 +3627,10 @@ dependencies = [
  "clap",
  "getrandom",
  "image",
+ "ps-vello",
  "rand",
  "roxmltree 0.20.0",
  "skrifa 0.44.0",
- "vello",
  "web-time",
 ]
 
@@ -3780,7 +3820,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "pollster",
- "vello",
+ "ps-vello",
  "winit",
 ]
 
@@ -4443,24 +4483,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
-name = "vello"
-version = "0.10.0"
-dependencies = [
- "bytemuck",
- "futures-intrusive",
- "log",
- "peniko",
- "png",
- "skrifa 0.44.0",
- "static_assertions",
- "thiserror 2.0.18",
- "vello_encoding",
- "vello_shaders",
- "wgpu",
- "wgpu-profiler",
-]
-
-[[package]]
 name = "vello_bench"
 version = "0.0.0"
 dependencies = [
@@ -4527,17 +4549,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "vello_encoding"
-version = "0.10.0"
-dependencies = [
- "bytemuck",
- "guillotiere",
- "peniko",
- "skrifa 0.44.0",
- "smallvec",
-]
-
-[[package]]
 name = "vello_example_scenes"
 version = "0.0.0"
 dependencies = [
@@ -4584,17 +4595,6 @@ dependencies = [
  "vello_hybrid",
  "wgpu",
  "winit",
-]
-
-[[package]]
-name = "vello_shaders"
-version = "0.10.0"
-dependencies = [
- "bytemuck",
- "log",
- "naga",
- "thiserror 2.0.18",
- "vello_encoding",
 ]
 
 [[package]]
@@ -4645,8 +4645,8 @@ dependencies = [
  "oxipng",
  "png",
  "pollster",
+ "ps-vello",
  "scenes",
- "vello",
 ]
 
 [[package]]
@@ -5733,12 +5733,12 @@ dependencies = [
  "notify-debouncer-full",
  "pollster",
  "profiling",
+ "ps-vello",
+ "ps-vello-shaders",
  "scenes",
  "tracing",
  "tracing-subscriber",
  "tracing_android_trace",
- "vello",
- "vello_shaders",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",

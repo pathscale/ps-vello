@@ -1,5 +1,5 @@
 [package]
-name = "vello"
+name = "ps-vello"
 version.workspace = true
 description = "A GPU compute-centric 2D renderer."
 categories = ["rendering", "graphics"]
@@ -43,6 +43,9 @@ hot_reload = ["vello_shaders/compile"]
 
 [lints]
 workspace = true
+
+[lib]
+name = "vello"
 
 [dependencies]
 vello_encoding = { workspace = true }
