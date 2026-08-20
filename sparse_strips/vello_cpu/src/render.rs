@@ -476,13 +476,7 @@ impl RenderContext {
         mask: Option<Mask>,
         filter: Option<Filter>,
     ) {
-        let mask = mask.and_then(|m| {
-            if m.width() != self.width || m.height() != self.height {
-                None
-            } else {
-                Some(m)
-            }
-        });
+        let mask = mask.filter(|m| !(m.width() != self.width || m.height() != self.height));
 
         let blend_mode = blend_mode.unwrap_or_default();
         let opacity = opacity.unwrap_or(1.0);

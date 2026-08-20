@@ -3,6 +3,13 @@
 
 //! Tests to ensure that certain issues which don't deserve a test scene don't regress
 
+// Test scenes are built from literal sizes and small vector lengths, so the
+// index and dimension casts here cannot truncate in practice.
+#![allow(
+    clippy::cast_possible_truncation,
+    reason = "test dimensions are small literals"
+)]
+
 use scenes::ImageCache;
 use scenes::SimpleText;
 use std::sync::Arc;
@@ -295,8 +302,7 @@ fn atlas_growth_keeps_drawing_images(use_cpu: bool) {
 
     let solid = |colour: Color| -> ImageData {
         let [r, g, b, a] = colour.to_rgba8().to_u8_array();
-        let data: Vec<u8> = std::iter::repeat([r, g, b, a])
-            .take((TILE * TILE) as usize)
+        let data: Vec<u8> = std::iter::repeat_n([r, g, b, a], (TILE * TILE) as usize)
             .flatten()
             .collect();
         ImageData {
@@ -382,8 +388,7 @@ fn atlas_stays_correct_across_frames(use_cpu: bool) {
 
     let solid = |colour: Color, tag: u8| -> ImageData {
         let [r, g, b, a] = colour.to_rgba8().to_u8_array();
-        let mut data: Vec<u8> = std::iter::repeat([r, g, b, a])
-            .take((TILE * TILE) as usize)
+        let mut data: Vec<u8> = std::iter::repeat_n([r, g, b, a], (TILE * TILE) as usize)
             .flatten()
             .collect();
         // A distinct blob per frame, so the cache sees a new image rather than
