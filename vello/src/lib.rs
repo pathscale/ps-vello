@@ -329,9 +329,12 @@ type BumpSubmission = (SubmissionIndex, Buffer, Arc<AtomicBool>);
 /// This is an assumption which is known to be limiting, and is planned to change.
 #[cfg(feature = "wgpu")]
 pub struct Renderer {
+    // `allow` rather than `expect`: the field is read in some feature
+    // combinations and not others, and an `expect` that is fulfilled in one and
+    // not the other is itself an error under `-D warnings`.
     #[cfg_attr(
         not(feature = "hot_reload"),
-        expect(
+        allow(
             dead_code,
             reason = "Options are only used to reinitialise on a hot reload"
         )
