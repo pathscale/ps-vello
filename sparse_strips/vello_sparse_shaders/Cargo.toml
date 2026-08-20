@@ -1,5 +1,7 @@
 [package]
-name = "vello_sparse_shaders"
+# Prefixed like the rest of the fork: the bare name on crates.io is
+# linebender's. `[lib]` stays `vello_sparse_shaders`, so no source changes.
+name = "ps-vello-sparse-shaders"
 # When updating, also update the version in the workspace dependency in the root Cargo.toml
 version = "0.2.0"
 description = "Provide WESL shaders linked to WGSL and GLSL for the `vello_hybrid` backends."

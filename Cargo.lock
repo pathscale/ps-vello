@@ -3334,9 +3334,9 @@ dependencies = [
  "pollster",
  "ps-glifo",
  "ps-vello-common",
+ "ps-vello-sparse-shaders",
  "roxmltree 0.20.0",
  "thiserror 2.0.18",
- "vello_sparse_shaders",
  "web-sys",
  "wgpu",
 ]
@@ -3350,6 +3350,17 @@ dependencies = [
  "naga",
  "ps-vello-encoding",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "ps-vello-sparse-shaders"
+version = "0.2.0"
+dependencies = [
+ "naga",
+ "wesl",
+ "wesl-macros",
+ "wgsl-parse",
+ "wgsl-types",
 ]
 
 [[package]]
@@ -4596,17 +4607,6 @@ dependencies = [
  "vello_example_scenes",
  "wgpu",
  "winit",
-]
-
-[[package]]
-name = "vello_sparse_shaders"
-version = "0.2.0"
-dependencies = [
- "naga",
- "wesl",
- "wesl-macros",
- "wgsl-parse",
- "wgsl-types",
 ]
 
 [[package]]
