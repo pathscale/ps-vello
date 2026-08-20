@@ -733,8 +733,13 @@ impl Renderer {
         wanted
     }
 
-    /// Nanoseconds the calling thread has spent blocked in
-    /// [`Self::block_on_bump_and_reallocate`], across the renderer's life.
+    /// Nanoseconds the calling thread has spent blocked waiting for a bump
+    /// buffer, across the renderer's life.
+    ///
+    /// Named in prose rather than linked: the wait lives in
+    /// `block_on_bump_and_reallocate`, which is private, and a public item
+    /// linking to a private one fails `cargo doc` under
+    /// `-D rustdoc::private_intra_doc_links`.
     ///
     /// This is the quantity the beachball is made of: the wait is paid on
     /// whichever thread renders, which is the UI thread for an embedder drawing
