@@ -1,5 +1,13 @@
 [package]
-name = "glifo"
+# Prefixed like the rest of the fork: `glifo` on crates.io is linebender's, and
+# theirs depends on *their* `vello_common`. Left unprefixed, publishing
+# `ps-vello-cpu` resolved that one and the two vello_commons disagreed on the
+# glyph trait:
+#
+#   error[E0053]: method `set_paint_image` has an incompatible type for trait
+#
+# `[lib]` stays `glifo`, so `use glifo::` is unchanged.
+name = "ps-glifo"
 version = "0.3.0"
 description = "Glifo provides APIs for efficiently rendering text."
 keywords = ["text", "layout"]

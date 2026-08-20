@@ -1352,22 +1352,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "glifo"
-version = "0.3.0"
-dependencies = [
- "bytemuck",
- "core_maths",
- "foldhash 0.2.0",
- "hashbrown 0.17.1",
- "log",
- "peniko",
- "png",
- "ps-vello-common",
- "skrifa 0.44.0",
- "smallvec",
-]
-
-[[package]]
 name = "glow"
 version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3262,6 +3246,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "ps-glifo"
+version = "0.3.0"
+dependencies = [
+ "bytemuck",
+ "core_maths",
+ "foldhash 0.2.0",
+ "hashbrown 0.17.1",
+ "log",
+ "peniko",
+ "png",
+ "ps-vello-common",
+ "skrifa 0.44.0",
+ "smallvec",
+]
+
+[[package]]
 name = "ps-vello"
 version = "0.10.0"
 dependencies = [
@@ -3301,10 +3301,10 @@ version = "0.2.0"
 dependencies = [
  "bytemuck",
  "crossbeam-channel",
- "glifo",
  "hashbrown 0.17.1",
  "ordered-channel",
  "png",
+ "ps-glifo",
  "ps-vello-common",
  "rayon",
  "thread_local",
@@ -3327,12 +3327,12 @@ name = "ps-vello-hybrid"
 version = "0.2.0"
 dependencies = [
  "bytemuck",
- "glifo",
  "hashbrown 0.17.1",
  "js-sys",
  "log",
  "png",
  "pollster",
+ "ps-glifo",
  "ps-vello-common",
  "roxmltree 0.20.0",
  "thiserror 2.0.18",
@@ -4575,10 +4575,10 @@ dependencies = [
  "bytemuck",
  "console_error_panic_hook",
  "console_log",
- "glifo",
  "image",
  "log",
  "parley",
+ "ps-glifo",
  "ps-vello-common",
  "ps-vello-cpu",
  "ps-vello-hybrid",
@@ -4615,10 +4615,10 @@ version = "0.0.0"
 dependencies = [
  "bytemuck",
  "fearless_simd",
- "glifo",
  "image",
  "oxipng",
  "pollster",
+ "ps-glifo",
  "ps-vello-common",
  "ps-vello-cpu",
  "ps-vello-hybrid",
