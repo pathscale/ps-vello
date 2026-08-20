@@ -399,9 +399,29 @@ pub(crate) fn check_ref(
         }
     }
 
-    let ref_image = load_from_memory(&std::fs::read(&ref_path).unwrap())
-        .unwrap()
-        .into_rgba8();
+    let ref_bytes = std::fs::read(&ref_path).unwrap();
+    /*
+     * An unfetched LFS pointer is not a reference image.
+     *
+     * The snapshots are stored in LFS, and a checkout that could not fetch them
+     * leaves a ~130 byte text file in place of every PNG. Handing that to
+     * `load_from_memory` panics on an unrecognised format, which reports as
+     * thousands of failing tests that say nothing about the renderer: on this
+     * fork that was 2664 of them, drowning the checks that do carry a signal.
+     *
+     * The pointer's first line is a spec URL, so it is unambiguous to detect.
+     * Skipping keeps a run without LFS honest - these tests did not pass, they
+     * did not run - while a run with the images present is unaffected.
+     */
+    if ref_bytes.starts_with(b"version https://git-lfs.github.com/spec/") {
+        eprintln!(
+            "skipping {}: reference image is an unfetched LFS pointer",
+            ref_path.display()
+        );
+        return;
+    }
+
+    let ref_image = load_from_memory(&ref_bytes).unwrap().into_rgba8();
     let actual = load_from_memory(&encoded_image).unwrap().into_rgba8();
 
     let diff_result = get_diff(&ref_image, &actual, threshold, diff_pixels);

@@ -121,9 +121,35 @@ pub async fn get_scene_image(
     get_scene_image_inner(params, std::slice::from_ref(scene)).await
 }
 
+/// Render a sequence through one renderer, timing each frame.
+///
+/// [`get_scene_images_sequence`] returns only the last image, which cannot show
+/// a cost that grows across a run. The wait this exists to catch is on the
+/// submission from *two frames ago*, so it cannot occur on the first two frames
+/// and applies to every frame after: the shape is in the per-frame times, and
+/// only a single renderer sees it, because a fresh one has no prior submission
+/// to wait on.
+pub async fn time_scene_sequence(
+    params: &TestParams,
+    scenes: &[Scene],
+) -> Result<(Vec<std::time::Duration>, ImageData), anyhow::Error> {
+    assert!(!scenes.is_empty(), "a sequence needs at least one scene");
+    let mut timings = Vec::with_capacity(scenes.len());
+    let image = get_scene_image_timed(params, scenes, Some(&mut timings)).await?;
+    Ok((timings, image))
+}
+
 async fn get_scene_image_inner(
     params: &TestParams,
     scenes: &[Scene],
+) -> Result<ImageData, anyhow::Error> {
+    get_scene_image_timed(params, scenes, None).await
+}
+
+async fn get_scene_image_timed(
+    params: &TestParams,
+    scenes: &[Scene],
+    mut timings: Option<&mut Vec<std::time::Duration>>,
 ) -> Result<ImageData, anyhow::Error> {
     let mut context = RenderContext::new();
     let device_id = context
@@ -170,9 +196,16 @@ async fn get_scene_image_inner(
     // Every frame goes through the same renderer, so the atlas and the buffer
     // pool carry over exactly as they do in a real application.
     for scene in scenes {
+        let start = std::time::Instant::now();
         renderer
             .render_to_texture(device, queue, scene, &view, &render_params)
             .or_else(|_| bail!("Got non-Send/Sync error from rendering"))?;
+        if let Some(timings) = timings.as_deref_mut() {
+            // Submission is asynchronous, so the wall clock around
+            // `render_to_texture` measures what the calling thread was made to
+            // wait for, which is exactly the quantity under test.
+            timings.push(start.elapsed());
+        }
     }
     let padded_byte_width = (width * 4).next_multiple_of(256);
     let buffer_size = padded_byte_width as u64 * height as u64;
