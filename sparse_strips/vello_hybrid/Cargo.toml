@@ -1,5 +1,9 @@
 [package]
-name = "vello_hybrid"
+# Published as `ps-*` because `vello_hybrid` on crates.io is linebender's, and
+# this is a fork. The `[lib]` name below stays `vello_hybrid`, so every path in
+# this workspace is unchanged: only the package a dependent asks for by version
+# moves. Same split `vello`/`ps-vello` already uses.
+name = "ps-vello-hybrid"
 version = "0.2.0"
 description = "A hybrid CPU/GPU renderer for Vello, balancing computation between CPU and GPU for efficiency."
 categories = ["rendering", "graphics"]
@@ -13,6 +17,9 @@ repository.workspace = true
 all-features = true
 default-target = "x86_64-unknown-linux-gnu"
 targets = ["wasm32-unknown-unknown"]
+
+[lib]
+name = "vello_hybrid"
 
 [dependencies]
 bytemuck = { workspace = true, features = ["derive"] }

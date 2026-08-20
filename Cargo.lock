@@ -1362,9 +1362,9 @@ dependencies = [
  "log",
  "peniko",
  "png",
+ "ps-vello-common",
  "skrifa 0.44.0",
  "smallvec",
- "vello_common",
 ]
 
 [[package]]
@@ -2475,9 +2475,9 @@ dependencies = [
  "console_log",
  "js-sys",
  "log",
- "vello_common",
+ "ps-vello-common",
+ "ps-vello-hybrid",
  "vello_example_scenes",
- "vello_hybrid",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
@@ -3280,6 +3280,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "ps-vello-common"
+version = "0.2.0"
+dependencies = [
+ "bytemuck",
+ "fearless_simd",
+ "guillotiere",
+ "libm",
+ "log",
+ "peniko",
+ "png",
+ "roxmltree 0.20.0",
+ "smallvec",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "ps-vello-cpu"
+version = "0.2.0"
+dependencies = [
+ "bytemuck",
+ "crossbeam-channel",
+ "glifo",
+ "hashbrown 0.17.1",
+ "ordered-channel",
+ "png",
+ "ps-vello-common",
+ "rayon",
+ "thread_local",
+]
+
+[[package]]
 name = "ps-vello-encoding"
 version = "0.10.0"
 dependencies = [
@@ -3289,6 +3320,25 @@ dependencies = [
  "peniko",
  "skrifa 0.44.0",
  "smallvec",
+]
+
+[[package]]
+name = "ps-vello-hybrid"
+version = "0.2.0"
+dependencies = [
+ "bytemuck",
+ "glifo",
+ "hashbrown 0.17.1",
+ "js-sys",
+ "log",
+ "png",
+ "pollster",
+ "ps-vello-common",
+ "roxmltree 0.20.0",
+ "thiserror 2.0.18",
+ "vello_sparse_shaders",
+ "web-sys",
+ "wgpu",
 ]
 
 [[package]]
@@ -4490,52 +4540,21 @@ dependencies = [
  "criterion",
  "image",
  "parley",
+ "ps-vello-common",
+ "ps-vello-cpu",
  "rand",
  "smallvec",
  "usvg",
- "vello_common",
- "vello_cpu",
  "vello_dev_macros",
-]
-
-[[package]]
-name = "vello_common"
-version = "0.2.0"
-dependencies = [
- "bytemuck",
- "fearless_simd",
- "guillotiere",
- "libm",
- "log",
- "peniko",
- "png",
- "roxmltree 0.20.0",
- "smallvec",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "vello_cpu"
-version = "0.2.0"
-dependencies = [
- "bytemuck",
- "crossbeam-channel",
- "glifo",
- "hashbrown 0.17.1",
- "ordered-channel",
- "png",
- "rayon",
- "thread_local",
- "vello_common",
 ]
 
 [[package]]
 name = "vello_cpu_winit"
 version = "0.0.0"
 dependencies = [
+ "ps-vello-common",
+ "ps-vello-cpu",
  "softbuffer",
- "vello_common",
- "vello_cpu",
  "vello_example_scenes",
  "winit",
 ]
@@ -4560,30 +4579,11 @@ dependencies = [
  "image",
  "log",
  "parley",
+ "ps-vello-common",
+ "ps-vello-cpu",
+ "ps-vello-hybrid",
  "skrifa 0.44.0",
  "smallvec",
- "vello_common",
- "vello_cpu",
- "vello_hybrid",
-]
-
-[[package]]
-name = "vello_hybrid"
-version = "0.2.0"
-dependencies = [
- "bytemuck",
- "glifo",
- "hashbrown 0.17.1",
- "js-sys",
- "log",
- "png",
- "pollster",
- "roxmltree 0.20.0",
- "thiserror 2.0.18",
- "vello_common",
- "vello_sparse_shaders",
- "web-sys",
- "wgpu",
 ]
 
 [[package]]
@@ -4591,9 +4591,9 @@ name = "vello_hybrid_winit"
 version = "0.0.0"
 dependencies = [
  "pollster",
- "vello_common",
+ "ps-vello-common",
+ "ps-vello-hybrid",
  "vello_example_scenes",
- "vello_hybrid",
  "wgpu",
  "winit",
 ]
@@ -4619,14 +4619,14 @@ dependencies = [
  "image",
  "oxipng",
  "pollster",
+ "ps-vello-common",
+ "ps-vello-cpu",
+ "ps-vello-hybrid",
  "serde",
  "serde_json",
  "skrifa 0.44.0",
  "smallvec",
- "vello_common",
- "vello_cpu",
  "vello_dev_macros",
- "vello_hybrid",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
@@ -4657,10 +4657,10 @@ dependencies = [
  "bytemuck",
  "clap",
  "image",
+ "ps-vello-common",
+ "ps-vello-cpu",
  "svg",
  "usvg",
- "vello_common",
- "vello_cpu",
 ]
 
 [[package]]
@@ -4858,8 +4858,8 @@ dependencies = [
  "console_log",
  "js-sys",
  "log",
- "vello_common",
- "vello_cpu",
+ "ps-vello-common",
+ "ps-vello-cpu",
  "vello_example_scenes",
  "wasm-bindgen",
  "wasm-bindgen-futures",
@@ -5262,9 +5262,9 @@ dependencies = [
  "console_log",
  "js-sys",
  "log",
- "vello_common",
+ "ps-vello-common",
+ "ps-vello-hybrid",
  "vello_example_scenes",
- "vello_hybrid",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",

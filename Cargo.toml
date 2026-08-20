@@ -128,9 +128,12 @@ wasm-bindgen-futures = "0.4.64"
 wasm-bindgen-test = "0.3.64"
 web-sys = "0.3.91"
 
-vello_common = { version = "0.2.0", path = "sparse_strips/vello_common", default-features = false }
-vello_cpu = { version = "0.2.0", path = "sparse_strips/vello_cpu" }
-vello_hybrid = { version = "0.2.0", path = "sparse_strips/vello_hybrid" }
+# `package` renames, `[lib]` names do not: the key stays `vello_common` so every
+# `vello_common = { workspace = true }` and every `use vello_common::` in this
+# workspace is untouched. Only what a dependent asks crates.io for changes.
+vello_common = { package = "ps-vello-common", version = "0.2.0", path = "sparse_strips/vello_common", default-features = false }
+vello_cpu = { package = "ps-vello-cpu", version = "0.2.0", path = "sparse_strips/vello_cpu" }
+vello_hybrid = { package = "ps-vello-hybrid", version = "0.2.0", path = "sparse_strips/vello_hybrid" }
 vello_sparse_shaders = { version = "0.2.0", path = "sparse_strips/vello_sparse_shaders" }
 glifo = { version = "0.3.0", path = "glifo", default-features = false }
 vello_example_scenes = { path = "sparse_strips/vello_example_scenes" }

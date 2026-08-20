@@ -1,5 +1,9 @@
 [package]
-name = "vello_cpu"
+# Published as `ps-*` because `vello_cpu` on crates.io is linebender's, and this
+# is a fork. The `[lib]` name below stays `vello_cpu`, so `use vello_cpu::` and
+# every path in this workspace are unchanged: only the package a dependent asks
+# for by version moves. Same split `vello`/`ps-vello` already uses.
+name = "ps-vello-cpu"
 version = "0.2.0"
 description = "A CPU-based renderer for Vello, optimized for SIMD and multithreaded execution."
 categories = ["rendering", "graphics"]
@@ -14,6 +18,9 @@ all-features = true
 # There are no platform specific docs.
 default-target = "x86_64-unknown-linux-gnu"
 targets = []
+
+[lib]
+name = "vello_cpu"
 
 [dependencies]
 bytemuck = { workspace = true }
