@@ -750,7 +750,9 @@ impl Renderer {
     /// Wait for the frame "two frames ago"'s bump buffer to be available, and reallocate if so.
     fn block_on_bump_and_reallocate(&mut self, device: &Device) -> Arc<AtomicBool> {
         let max_binding_size = device.limits().max_storage_buffer_binding_size;
-        if let Some((idx, bump, completed)) = self.previouser_submission.take() {
+        // The submission index is no longer needed: nothing waits on a specific
+        // submission, it only asks whether this buffer's callback has run.
+        if let Some((_idx, bump, completed)) = self.previouser_submission.take() {
             // Ensure that we have the bump buffer from the rendering two frames ago
             // The previous frame will have been cancelled if that is the case
 
@@ -800,33 +802,40 @@ impl Renderer {
             let blocked_from = std::time::Instant::now();
             if !completed.load(Ordering::Acquire) {
                 /*
-                 * Bounded, because an unbounded wait here is a hang rather than
-                 * a stall.
+                 * Never blocks. The reallocation is an optimisation, not a
+                 * correctness requirement, so a frame that cannot make the
+                 * decision cheaply defers it to one that can.
                  *
-                 * `timeout: None` parks the calling thread until the submission
-                 * signals, with no way out if it never does. Caught on the
-                 * consuming app with symbols: 3773 of 3773 main-thread samples
-                 * inside `wgpu_hal::metal::Device::wait`, under
-                 * `anyrender_vello::backdrop::execute` and
-                 * `Renderer::render_to_texture`, on a window that had rendered
-                 * no frames at all. It reproduced on roughly one launch in five,
-                 * which is what an occasional stalled submission looks like from
-                 * the outside.
+                 * This wait was the beachball. It parked the calling thread
+                 * until a submission from two frames ago signalled, and with a
+                 * `backdrop-filter` on the page that thread is the UI thread:
+                 * `backdrop::execute` renders once per boundary plus once for
+                 * the final scene, so a page with three glass surfaces pays it
+                 * four times before a single frame is presented. Sampled on the
+                 * consuming app at 3773 of 3773 main-thread samples inside
+                 * `wgpu_hal::metal::Device::wait`, on a window that had rendered
+                 * nothing at all.
                  *
-                 * The timeout does not skip the synchronisation: on expiry the
-                 * `completed` flag below is still false, so the bump buffer is
-                 * simply not read this frame and the reallocation decision waits
-                 * for a frame where it is. That is the same path taken when the
-                 * download is absent, so it is a case this code already handles
-                 * rather than a new one.
+                 * Bounding it to a second turned a hang into a hitch, which was
+                 * an improvement and not a fix: measured here, the wait cost
+                 * 0ns for one and two renders and then about 5.5ms from the
+                 * third onward, once `previouser_submission` had filled. 5.5ms
+                 * is most of a frame at 120Hz, spent parked, every frame.
                  *
-                 * A second is far longer than any healthy submission and short
-                 * enough that a user sees a hitch instead of a beachball.
+                 * A non-blocking poll advances mapping callbacks without
+                 * waiting. When the callback has run, `completed` is true and
+                 * the buffer is read exactly as before; when it has not, this
+                 * frame simply does not resize its buffers and the next one
+                 * looks again. Skipping the *decision* is safe in a way that
+                 * skipping the *synchronisation* is not: nothing below reads
+                 * the mapped buffer unless the flag says the data is real.
+                 *
+                 * The earlier attempt at this was `PollType::Poll` gating on
+                 * `is_queue_empty()`, which asks about the whole queue and so
+                 * never passed under continuous rendering. Consulting the
+                 * per-submission flag is what makes the difference.
                  */
-                let _ = device.poll(wgpu::PollType::Wait {
-                    submission_index: Some(idx),
-                    timeout: Some(std::time::Duration::from_secs(1)),
-                });
+                let _ = device.poll(wgpu::PollType::Poll);
             }
             self.blocked_nanos
                 .fetch_add(blocked_from.elapsed().as_nanos() as u64, Ordering::Relaxed);
