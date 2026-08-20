@@ -781,9 +781,33 @@ impl Renderer {
              * worst case is the previous behaviour.
              */
             if !completed.load(Ordering::Acquire) {
+                /*
+                 * Bounded, because an unbounded wait here is a hang rather than
+                 * a stall.
+                 *
+                 * `timeout: None` parks the calling thread until the submission
+                 * signals, with no way out if it never does. Caught on the
+                 * consuming app with symbols: 3773 of 3773 main-thread samples
+                 * inside `wgpu_hal::metal::Device::wait`, under
+                 * `anyrender_vello::backdrop::execute` and
+                 * `Renderer::render_to_texture`, on a window that had rendered
+                 * no frames at all. It reproduced on roughly one launch in five,
+                 * which is what an occasional stalled submission looks like from
+                 * the outside.
+                 *
+                 * The timeout does not skip the synchronisation: on expiry the
+                 * `completed` flag below is still false, so the bump buffer is
+                 * simply not read this frame and the reallocation decision waits
+                 * for a frame where it is. That is the same path taken when the
+                 * download is absent, so it is a case this code already handles
+                 * rather than a new one.
+                 *
+                 * A second is far longer than any healthy submission and short
+                 * enough that a user sees a hitch instead of a beachball.
+                 */
                 let _ = device.poll(wgpu::PollType::Wait {
                     submission_index: Some(idx),
-                    timeout: None,
+                    timeout: Some(std::time::Duration::from_secs(1)),
                 });
             }
 
