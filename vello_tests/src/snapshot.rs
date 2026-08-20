@@ -204,6 +204,35 @@ pub fn snapshot_test_image(
         )?;
     }
 
+    /*
+     * An unfetched LFS pointer stands in for a missing reference.
+     *
+     * The snapshots live in LFS, and a checkout that could not fetch them
+     * leaves a ~130 byte text file where every PNG should be. `image::open`
+     * then reports an invalid signature, which reads as a rendering failure
+     * rather than as an environment that never had the images. Skipping says
+     * what is true: this test did not run.
+     */
+    if std::fs::read(&reference_path)
+        .is_ok_and(|bytes| bytes.starts_with(b"version https://git-lfs.github.com/spec/"))
+    {
+        eprintln!(
+            "skipping {}: reference image is an unfetched LFS pointer",
+            reference_path.display()
+        );
+        return Ok(Snapshot {
+            // `None` is already this type's way of saying no comparison ran, so
+            // the assertion helpers treat a skip as "nothing to check" rather
+            // than as a pass.
+            statistics: None,
+            reference_path,
+            update_path,
+            raw_rendered,
+            params,
+            directory,
+        });
+    }
+
     let expected_data = match image::open(&reference_path) {
         Ok(contents) => {
             let size = std::fs::metadata(&reference_path).map(|it| it.len())?;

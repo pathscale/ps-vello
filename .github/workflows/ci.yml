@@ -231,6 +231,12 @@ jobs:
 
   prime-lfs-cache:
     name: Prime LFS Cache
+    # Manual, because this fork's LFS objects are not fetchable: every snapshot
+    # PNG in the tree is still a 128-byte pointer file. The job could only ever
+    # fail, and a check that cannot pass teaches nothing while making the ones
+    # that can pass harder to see. Run it from the Actions tab once LFS storage
+    # is configured, and flip this back when it can succeed.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubicloud-standard-4
     continue-on-error: true
     outputs:
@@ -260,7 +266,11 @@ jobs:
   
   test-stable:
     name: cargo test
+    # `always()` so a skipped Prime LFS Cache does not skip the tests with it:
+    # a needed job that does not run is treated as unmet without this. The
+    # snapshot tests detect the missing images themselves and skip.
     needs: prime-lfs-cache
+    if: always()
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
