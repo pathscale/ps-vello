@@ -11,7 +11,7 @@ env:
   RUST_MIN_VER: "1.88"
   # List of packages that will be checked with the minimum supported Rust version.
   # This should be limited to packages that are intended for publishing.
-  RUST_MIN_VER_PKGS: "-p vello -p vello_encoding -p vello_shaders -p vello_common -p vello_cpu -p vello_hybrid -p glifo"
+  RUST_MIN_VER_PKGS: "-p ps-vello -p ps-vello-encoding -p ps-vello-shaders -p vello_common -p vello_cpu -p vello_hybrid -p glifo"
   # List of packages that will be checked for `no_std` builds.
   # This should be limited to packages that are intended for publishing.
   RUST_NO_STD_PKGS: "-p vello_common -p vello_cpu -p glifo"
