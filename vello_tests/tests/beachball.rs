@@ -60,6 +60,10 @@ fn successive_frames_do_not_block_past_a_refresh_interval() {
         .expect("the sequence must render");
     let last = image.data.data();
 
+    // Printed on every run, so a failure on a machine that cannot be attached
+    // to says which frame was slow rather than only that one was.
+    eprintln!("per-frame times: {times:?}");
+
     // The output still has to be right. A renderer that skips synchronisation
     // to go fast fails here rather than passing on the timing alone: the
     // "invalid empty image" attempt drew nothing, and a starved reallocation
