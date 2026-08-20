@@ -152,7 +152,7 @@ impl ImageCache {
     /// rects (2688x1800 on this display) cannot be packed into 4096x4096, so a
     /// frame with two backdrop boundaries escalates 1024 -> 2048 -> 4096 ->
     /// 8192 and the process then holds a quarter gigabyte of atlas forever.
-    /// Measured on AgencyZero, that single 258 MB allocation was the largest
+    /// Measured on `AgencyZero`, that single 258 MB allocation was the largest
     /// item in a 1 GB graphics footprint, and it was present in every build.
     ///
     /// Shrinking is the same repack as growing, so it costs a repack of the
@@ -290,6 +290,11 @@ impl ImageCache {
         self.evicted_in_resolve != 0
     }
 
+    /// Square repack, used by the tests that exercise atlas growth.
+    ///
+    /// `cfg(test)` rather than deleted: clippy sees no caller in the library
+    /// build and the tests do not compile without it.
+    #[cfg(test)]
     fn repack_to_size(&mut self, size: i32) -> bool {
         self.repack_to(size, size)
     }

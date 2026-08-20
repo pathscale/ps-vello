@@ -88,7 +88,7 @@ impl Shader {
 }
 
 pub(crate) enum ExternalResource<'a> {
-    #[expect(unused, reason = "No buffers are accepted as arguments currently")]
+    #[allow(unused, reason = "No buffers are accepted as arguments currently")]
     Buffer(BufferProxy, &'a Buffer),
     Image(ImageProxy, &'a TextureView),
 }

@@ -663,7 +663,7 @@ impl Renderer {
         // Create a fake, empty blob which will be used to back the returned image
         // This image data will never be read by Vello, due to being added to
         // image_overrides, below.
-        let fake_blob = peniko::Blob::new(std::sync::Arc::new(&[]));
+        let fake_blob = peniko::Blob::new(Arc::new(&[]));
 
         let image = ImageData {
             data: fake_blob,
@@ -730,9 +730,7 @@ impl Renderer {
     /// Wait for the frame "two frames ago"'s bump buffer to be available, and reallocate if so.
     fn block_on_bump_and_reallocate(&mut self, device: &Device) -> Arc<AtomicBool> {
         let max_binding_size = device.limits().max_storage_buffer_binding_size;
-        let buffer_completed = if let Some((idx, bump, completed)) =
-            self.previouser_submission.take()
-        {
+        if let Some((idx, bump, completed)) = self.previouser_submission.take() {
             // Ensure that we have the bump buffer from the rendering two frames ago
             // The previous frame will have been cancelled if that is the case
 
@@ -954,8 +952,7 @@ impl Renderer {
             completed
         } else {
             Arc::new(AtomicBool::new(false))
-        };
-        buffer_completed
+        }
     }
 
     /// Reload the shaders. This should only be used during `vello` development
@@ -1006,7 +1003,7 @@ impl Renderer {
     ) -> Result<Option<BumpAllocators>> {
         if cfg!(not(feature = "debug_layers")) && !debug_layers.is_empty() {
             static HAS_WARNED: AtomicBool = AtomicBool::new(false);
-            if !HAS_WARNED.swap(true, std::sync::atomic::Ordering::Release) {
+            if !HAS_WARNED.swap(true, Ordering::Release) {
                 log::warn!(
                     "Requested debug layers {debug_layers:?} but `debug_layers` feature is not enabled"
                 );
@@ -1090,7 +1087,7 @@ impl Renderer {
             &self.shaders,
             &mut self.image_atlas,
             params,
-            Default::default(),
+            BumpAllocators::default(),
             robust,
         );
         let target = render.out_image();

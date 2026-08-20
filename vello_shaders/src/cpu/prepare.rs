@@ -17,7 +17,7 @@ fn prepare_main(_config: &ConfigUniform, bump: &mut BumpAllocators) {
     bump.failed = 0;
 }
 
-pub fn prepare(_n_wg: u32, resources: &[CpuBinding]) {
+pub fn prepare(_n_wg: u32, resources: &[CpuBinding<'_>]) {
     // On the GPU, config is mutable, but our CPU runner doesn't allow accessing uploaded buffers as mutable
     // This is a hack
     let config = resources[0].as_typed();
