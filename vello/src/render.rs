@@ -159,7 +159,11 @@ impl Render {
         persistent_image_atlas: &mut Option<ImageProxy>,
         params: &RenderParams,
         bump_sizes: BumpAllocators,
-        #[cfg_attr(not(feature = "debug_layers"), allow(unused))] robust: bool,
+        #[cfg_attr(
+            not(feature = "debug_layers"),
+            allow(unused, reason = "Only read when debug layers are compiled in")
+        )]
+        robust: bool,
     ) -> Recording {
         use vello_encoding::RenderConfig;
         let mut recording = Recording::default();
