@@ -1,9 +1,15 @@
 name: Web Demo Update
 
+# Manual, because this fork has no GitHub Pages site for it to deploy to.
+# The job builds a wasm demo and pushes it to Pages, which fails at the deploy
+# step every time and has done so on every push to main, including commits that
+# changed nothing it touches. A check that cannot pass reports nothing and costs
+# a wasm toolchain install and a full example build per merge.
+#
+# Restore the push trigger if Pages is ever configured here; nothing else about
+# the job needs to change.
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
 
 jobs:
   release-web:
