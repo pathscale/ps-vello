@@ -103,3 +103,37 @@ fn successive_frames_do_not_block_past_a_refresh_interval() {
          backdrop-filter"
     );
 }
+
+/// The wait must not be reachable before any frame has been presented.
+///
+/// This is the wedge the consuming app hits: sampled with an empty frame log,
+/// parked in `wgpu_hal::metal::Device::wait` under `backdrop::execute`. The
+/// twelve-frame test cannot see it, because it renders once per frame and so
+/// first reaches the wait on the third frame, by which point two frames have
+/// been presented.
+///
+/// `backdrop::execute` renders once per backdrop boundary and once more for the
+/// final scene, so four renders happen before anything is presented. Those go
+/// through one renderer, which is what this measures: if the wait is reachable
+/// within a single frame, the counter moves before a frame ever completes.
+#[test]
+#[cfg_attr(skip_gpu_tests, ignore)]
+fn the_wait_is_not_reachable_within_a_single_frame() {
+    // One frame of a page with three glass surfaces.
+    const RENDERS: usize = 4;
+
+    let scenes: Vec<Scene> = (0..RENDERS).map(frame).collect();
+    let params = TestParams::new("beachball_first_frame", 150, 150);
+    let (blocked, _image) = pollster::block_on(vello_tests::time_scene_sequence(&params, &scenes))
+        .expect("the sequence must render");
+
+    eprintln!("blocked for {blocked:?} within one frame of {RENDERS} renders");
+
+    assert!(
+        blocked < Duration::from_millis(20),
+        "the renderer blocked its caller for {blocked:?} across {RENDERS} renders \
+         inside a single frame; that is the wedge the app hits with an empty \
+         frame log, because a backdrop filter renders several times before \
+         anything is presented"
+    );
+}
