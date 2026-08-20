@@ -132,11 +132,11 @@ pub async fn get_scene_image(
 pub async fn time_scene_sequence(
     params: &TestParams,
     scenes: &[Scene],
-) -> Result<(Vec<std::time::Duration>, ImageData), anyhow::Error> {
+) -> Result<(std::time::Duration, ImageData), anyhow::Error> {
     assert!(!scenes.is_empty(), "a sequence needs at least one scene");
-    let mut timings = Vec::with_capacity(scenes.len());
-    let image = get_scene_image_timed(params, scenes, Some(&mut timings)).await?;
-    Ok((timings, image))
+    let mut blocked = std::time::Duration::ZERO;
+    let image = get_scene_image_timed(params, scenes, Some(&mut blocked)).await?;
+    Ok((blocked, image))
 }
 
 async fn get_scene_image_inner(
@@ -149,7 +149,7 @@ async fn get_scene_image_inner(
 async fn get_scene_image_timed(
     params: &TestParams,
     scenes: &[Scene],
-    mut timings: Option<&mut Vec<std::time::Duration>>,
+    blocked: Option<&mut std::time::Duration>,
 ) -> Result<ImageData, anyhow::Error> {
     let mut context = RenderContext::new();
     let device_id = context
@@ -196,16 +196,15 @@ async fn get_scene_image_timed(
     // Every frame goes through the same renderer, so the atlas and the buffer
     // pool carry over exactly as they do in a real application.
     for scene in scenes {
-        let start = std::time::Instant::now();
         renderer
             .render_to_texture(device, queue, scene, &view, &render_params)
             .or_else(|_| bail!("Got non-Send/Sync error from rendering"))?;
-        if let Some(timings) = timings.as_deref_mut() {
-            // Submission is asynchronous, so the wall clock around
-            // `render_to_texture` measures what the calling thread was made to
-            // wait for, which is exactly the quantity under test.
-            timings.push(start.elapsed());
-        }
+    }
+    if let Some(blocked) = blocked {
+        // The renderer counts what the calling thread was actually parked for,
+        // which is the quantity the beachball is made of and the one that means
+        // the same thing on a discrete GPU and a software adapter alike.
+        *blocked = std::time::Duration::from_nanos(renderer.blocked_nanos());
     }
     let padded_byte_width = (width * 4).next_multiple_of(256);
     let buffer_size = padded_byte_width as u64 * height as u64;

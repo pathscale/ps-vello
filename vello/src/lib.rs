@@ -349,6 +349,8 @@ pub struct Renderer {
     // Fields for robust dynamic memory: the bump buffer is read back a frame
     // late, and the sizes it reports drive the next frame's allocation.
     bump: Option<Buffer>,
+    /// See [`Self::blocked_nanos`].
+    blocked_nanos: std::sync::atomic::AtomicU64,
     previous_submission: Option<BumpSubmission>,
     previouser_submission: Option<BumpSubmission>,
     bump_sizes: BumpAllocators,
@@ -469,6 +471,7 @@ impl Renderer {
             #[cfg(feature = "debug_layers")]
             debug,
             bump: None,
+            blocked_nanos: std::sync::atomic::AtomicU64::new(0),
             previous_submission: None,
             previouser_submission: None,
             bump_sizes: BumpAllocators::initial_sizes(),
@@ -730,6 +733,20 @@ impl Renderer {
         wanted
     }
 
+    /// Nanoseconds the calling thread has spent blocked in
+    /// [`Self::block_on_bump_and_reallocate`], across the renderer's life.
+    ///
+    /// This is the quantity the beachball is made of: the wait is paid on
+    /// whichever thread renders, which is the UI thread for an embedder drawing
+    /// a `backdrop-filter`. Frame wall-clock is a poor proxy for it, because a
+    /// discrete GPU absorbs submission asynchronously while a software adapter
+    /// does not, so the same defect moves the number by milliseconds on one and
+    /// is lost in seconds of queue flush on the other. Reading the wait itself
+    /// says the same thing on both.
+    pub fn blocked_nanos(&self) -> u64 {
+        self.blocked_nanos.load(Ordering::Relaxed)
+    }
+
     /// Wait for the frame "two frames ago"'s bump buffer to be available, and reallocate if so.
     fn block_on_bump_and_reallocate(&mut self, device: &Device) -> Arc<AtomicBool> {
         let max_binding_size = device.limits().max_storage_buffer_binding_size;
@@ -780,6 +797,7 @@ impl Renderer {
              * When the flag is false the wait happens exactly as before, so the
              * worst case is the previous behaviour.
              */
+            let blocked_from = std::time::Instant::now();
             if !completed.load(Ordering::Acquire) {
                 /*
                  * Bounded, because an unbounded wait here is a hang rather than
@@ -810,6 +828,8 @@ impl Renderer {
                     timeout: Some(std::time::Duration::from_secs(1)),
                 });
             }
+            self.blocked_nanos
+                .fetch_add(blocked_from.elapsed().as_nanos() as u64, Ordering::Relaxed);
 
             if completed.swap(false, Ordering::Acquire) {
                 {

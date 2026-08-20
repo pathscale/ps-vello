@@ -56,13 +56,11 @@ fn successive_frames_do_not_block_past_a_refresh_interval() {
 
     let scenes: Vec<Scene> = (0..FRAMES).map(frame).collect();
     let params = TestParams::new("beachball_no_block", 150, 150);
-    let (times, image) = pollster::block_on(vello_tests::time_scene_sequence(&params, &scenes))
+    let (blocked, image) = pollster::block_on(vello_tests::time_scene_sequence(&params, &scenes))
         .expect("the sequence must render");
     let last = image.data.data();
 
-    // Printed on every run, so a failure on a machine that cannot be attached
-    // to says which frame was slow rather than only that one was.
-    eprintln!("per-frame times: {times:?}");
+    eprintln!("blocked for {blocked:?} across {FRAMES} frames");
 
     // The output still has to be right. A renderer that skips synchronisation
     // to go fast fails here rather than passing on the timing alone: the
@@ -79,55 +77,29 @@ fn successive_frames_do_not_block_past_a_refresh_interval() {
     );
 
     /*
-     * The shape of the cost, not its absolute size.
+     * The wait itself, not the frame around it.
      *
-     * An earlier version of this asserted total wall-clock against a fixed
-     * budget, and that made it flaky: run alone it passed comfortably, run
-     * inside `cargo test --workspace` alongside several thousand other tests it
-     * failed on contention rather than on anything about the renderer. A test
-     * that fails for reasons outside what it is testing teaches nothing, which
-     * is the same objection as a check that can only ever fail.
+     * Three earlier versions of this asserted on wall-clock and each was wrong
+     * in its own way: a total budget failed under `--workspace` on contention,
+     * a per-frame budget failed on CI where a software adapter flushes the
+     * queue on whichever frame it likes, and draining the queue to make those
+     * numbers comparable buried a 30ms stall under 6.5ms of real GPU work per
+     * frame. Frame time is a proxy, and every proxy for this defect breaks on
+     * some machine.
      *
-     * The defect has a signature that machine load does not imitate. The wait
-     * is on the submission from *two frames ago*, so it cannot occur on the
-     * first two frames at all and then applies to every frame after: the tail
-     * of the run is systematically slower than its head. Contention slows all
-     * of the frames roughly alike, so the ratio between them stays near one
-     * however loaded the machine is.
+     * `Renderer::blocked_nanos` is the defect stated directly: how long the
+     * calling thread was parked inside the renderer. It does not vary with the
+     * adapter, because it measures the wait rather than the work around it.
      *
-     * Four times is far below what the defect produced - the beachball had the
-     * calling thread parked for 99% of its samples - and far above the spread
-     * of an unloaded run.
+     * Twelve frames of a 150x150 square need essentially none of it. The
+     * threshold is generous next to the defect, which parked the thread for 99%
+     * of its samples and shows here as tens of milliseconds per frame.
      */
-    let head: Duration = times[..2].iter().sum::<Duration>() / 2;
-    let tail: Duration = times[FRAMES - 4..].iter().sum::<Duration>() / 4;
     assert!(
-        tail < head * 4,
-        "later frames are {tail:?} against {head:?} for the first two: the \
-         renderer is blocking on a submission from two frames ago, which is \
-         paid once per frame on whichever thread is rendering"
+        blocked < Duration::from_millis(50),
+        "the renderer blocked its caller for {blocked:?} across {FRAMES} frames; \
+         the wait on a submission from two frames ago is being paid on whichever \
+         thread renders, which is the UI thread for an embedder drawing a \
+         backdrop-filter"
     );
-
-    // A floor as well, so a renderer that stopped submitting work entirely
-    // cannot pass by being trivially fast.
-    assert!(
-        times.iter().all(|t| *t > Duration::ZERO),
-        "every frame should take measurable time; {times:?}"
-    );
-
-    /*
-     * No absolute ceiling, deliberately.
-     *
-     * There was one, and CI failed it at 3.19s for a single frame. That frame
-     * was the *first*, which on a runner with no GPU pays for shader
-     * compilation and pipeline creation against a software adapter. It is
-     * start-up cost rather than a stall, and it is exactly the sort of
-     * environment difference a fixed budget cannot tell apart from a defect,
-     * which is why the wall-clock version of this test was replaced in the
-     * first place. Reintroducing a ceiling smuggled the same mistake back in.
-     *
-     * The head-versus-tail comparison above already excludes it: the first two
-     * frames are the baseline, so whatever they pay for warm-up is what later
-     * frames are measured against.
-     */
 }
