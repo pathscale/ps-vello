@@ -565,9 +565,11 @@ mod binding_limit_tests {
     /// the result, wgpu turned that into a panic, and the window came up grey.
     #[test]
     fn ptcl_sum_cannot_exceed_a_binding() {
-        let mut layout = Layout::default();
         // 64 MB of static prefix, in u32 elements.
-        layout.ptcl_dyn_start = 16 << 20;
+        let layout = Layout {
+            ptcl_dyn_start: 16 << 20,
+            ..Default::default()
+        };
         let bump = BumpAllocators {
             // Another 128 MB of tail: 192 MB together, the size that panicked.
             ptcl: 32 << 20,
@@ -586,8 +588,10 @@ mod binding_limit_tests {
     /// A device that allows more than the floor gets to use it.
     #[test]
     fn a_larger_device_limit_is_honoured() {
-        let mut layout = Layout::default();
-        layout.ptcl_dyn_start = 16 << 20;
+        let layout = Layout {
+            ptcl_dyn_start: 16 << 20,
+            ..Default::default()
+        };
         let bump = BumpAllocators {
             ptcl: 32 << 20,
             ..Default::default()
@@ -636,8 +640,10 @@ mod binding_limit_tests {
     /// clamp rather than wrap to something small and silently under-allocate.
     #[test]
     fn a_prefix_that_overflows_clamps_instead_of_wrapping() {
-        let mut layout = Layout::default();
-        layout.ptcl_dyn_start = u32::MAX;
+        let layout = Layout {
+            ptcl_dyn_start: u32::MAX,
+            ..Default::default()
+        };
         let bump = BumpAllocators {
             ptcl: u32::MAX,
             ..Default::default()
