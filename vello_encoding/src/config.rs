@@ -56,7 +56,7 @@ pub struct BumpAllocatorMemory {
 /// WebGPU guarantees this as the floor, so it is what [`BumpAllocators::memory`]
 /// bounds against when no device limit has been supplied. A device that allows
 /// more gets the extra through [`BumpAllocators::memory_within`].
-pub const MIN_MAX_STORAGE_BUFFER_BINDING_SIZE: u32 = 128 << 20;
+pub(crate) const MIN_MAX_STORAGE_BUFFER_BINDING_SIZE: u32 = 128 << 20;
 
 /// Clamp one buffer's element count to what a single binding can address.
 ///
@@ -473,7 +473,7 @@ impl BumpAllocators {
         let ptcl = 1 << 17;
         // 16 * 16 (1 << 8) is one blend spill, so this allows for 4096 spills.
         let blend_spill = 1 << 20;
-        BumpAllocators {
+        Self {
             binning,
             lines,
             ptcl,

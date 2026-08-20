@@ -273,10 +273,9 @@ impl Encoding {
     }
 
     /// Encodes a brush with an optional alpha modifier.
-    #[expect(
-        single_use_lifetimes,
-        reason = "False positive: https://github.com/rust-lang/rust/issues/129255"
-    )]
+    // The `single_use_lifetimes` false positive this used to expect
+    // (rust-lang/rust#129255) no longer fires, and an unfulfilled expectation is
+    // itself denied under `-D warnings`.
     pub fn encode_brush<'b>(&mut self, brush: impl Into<BrushRef<'b>>, alpha: f32) {
         use super::math::point_to_f32;
         match brush.into() {
