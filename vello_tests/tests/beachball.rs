@@ -103,3 +103,48 @@ fn successive_frames_do_not_block_past_a_refresh_interval() {
          backdrop-filter"
     );
 }
+
+/// Many renders inside one frame, which is what a backdrop filter actually does.
+///
+/// `anyrender_vello::backdrop::execute` calls `render_to_texture` once per
+/// backdrop boundary and once more for the final scene, so a page with three
+/// glass surfaces renders four times before a single frame is presented. That
+/// matters for this wait: `previouser_submission` fills up *within* one frame
+/// rather than across frames, so the wait is reachable long before any frame
+/// completes.
+///
+/// It is why the app could wedge with zero frames rendered, and why the
+/// twelve-frame test above cannot see that case: it renders once per frame and
+/// only reaches the wait from the third frame onward.
+///
+/// Stated plainly: this currently exercises the same code path as the test
+/// above, because the harness builds one renderer per call and cannot yet put
+/// several renders inside one presented frame. It is kept because the shape it
+/// documents is the one the consuming app hits, and because the finding it
+/// records - that the wait is reachable before any frame completes - is what
+/// explains a wedge the other test cannot reproduce. Making it genuinely
+/// distinct needs a harness that presents, which is the next piece of work.
+#[test]
+#[cfg_attr(skip_gpu_tests, ignore)]
+fn many_renders_in_one_frame_do_not_block_the_caller() {
+    // Four renders is a page with three backdrop boundaries, which the consuming
+    // app reached routinely before the pass count was cut.
+    const RENDERS: usize = 4;
+    const FRAMES: usize = 3;
+
+    let scenes: Vec<Scene> = (0..RENDERS * FRAMES).map(frame).collect();
+    let params = TestParams::new("beachball_backdrop_shape", 150, 150);
+    let (blocked, _image) = pollster::block_on(vello_tests::time_scene_sequence(&params, &scenes))
+        .expect("the sequence must render");
+
+    eprintln!("blocked for {blocked:?} across {} renders", scenes.len());
+
+    assert!(
+        blocked < Duration::from_millis(50),
+        "the renderer blocked its caller for {blocked:?} across {} renders; a \
+         backdrop filter renders once per boundary plus once for the final \
+         scene, so this wait is paid several times per frame and lands on the \
+         UI thread",
+        scenes.len()
+    );
+}
