@@ -1031,17 +1031,54 @@ impl ResourcePool {
         usage: BufferUsages,
         device: &Device,
     ) -> Buffer {
-        let rounded_size = Self::size_class(size, SIZE_CLASS_BITS);
-        // let max_storage_buffer_binding_size =
-        //     device.limits().max_storage_buffer_binding_size.into();
-        // if rounded_size > max_storage_buffer_binding_size {
-        //     if size < max_storage_buffer_binding_size {
-        //         log::warn!("Would allocate buffer {name} to be larger than {max_storage_buffer_binding_size}. Clamped");
-        //         rounded_size = max_storage_buffer_binding_size;
-        //     } else {
-        //         log::warn!("Would allocate buffer {name} to be larger than {max_storage_buffer_binding_size}, which is not allowed");
-        //     }
-        // }
+        /*
+         * Rounding up is what puts a legal buffer over the device's limit.
+         *
+         * `vello_encoding`'s `clamp_to_binding_limit` already bounds every
+         * element count against `max_storage_buffer_binding_size`, and the
+         * seven growth sites in `lib.rs` route through
+         * `grow_within_binding_limit`. Both bound the size that is *asked
+         * for*. This function then rounds that up to a size class, and with
+         * `SIZE_CLASS_BITS = 1` the classes step by half: a buffer clamped to
+         * exactly the 128 MiB ceiling, asked for one byte more, becomes
+         * 192 MiB. That rounded size is the one handed to `create_bind_group`,
+         * so the allocation the clamps made legal is bound illegal.
+         *
+         * Measured on this app: `Buffer binding 1 range 201326592 exceeds
+         * max_*_buffer_binding_size limit 134217728`. 201326592 is exactly
+         * 1.5 x 128 MiB, which is the size class above the limit and not a
+         * number any scene asked for. wgpu turns that validation failure into
+         * a panic on the render thread, so the window dies mid-frame.
+         *
+         * So the ceiling is applied after the rounding, not before it. Only
+         * storage buffers are bound against this limit; a buffer without
+         * `STORAGE` (a download staging buffer, say) is untouched, because
+         * clamping those would corrupt a readback for a limit they never hit.
+         *
+         * Clamping to the limit rather than refusing keeps the existing
+         * degradation story: the shaders report the shortfall through
+         * `bump.failed`, so an oversized scene loses content for a frame
+         * instead of taking the process down.
+         */
+        let mut rounded_size = Self::size_class(size, SIZE_CLASS_BITS);
+        if usage.contains(BufferUsages::STORAGE) {
+            let max_binding_size = device.limits().max_storage_buffer_binding_size;
+            if rounded_size > max_binding_size {
+                if size <= max_binding_size {
+                    log::warn!(
+                        "{name} rounded from {size} to {rounded_size}, past the device's \
+                         {max_binding_size} binding limit; clamping to the limit"
+                    );
+                    rounded_size = max_binding_size;
+                } else {
+                    log::warn!(
+                        "{name} needs {size}, past the device's {max_binding_size} binding \
+                         limit; clamping, so this frame will be missing content"
+                    );
+                    rounded_size = max_binding_size;
+                }
+            }
+        }
         let props = BufferProperties {
             size: rounded_size,
             usages: usage,
@@ -1339,5 +1376,51 @@ impl<'a> TransientBindMap<'a> {
                 ResourceProxy::Image(_) => todo!(),
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod size_class_tests {
+    use super::{ResourcePool, SIZE_CLASS_BITS};
+
+    /// The limit every WebGPU device is guaranteed to allow, and the one the
+    /// machine this was measured on reports.
+    const LIMIT: u64 = 128 << 20;
+
+    /// The regression: rounding a legal size produces an illegal one.
+    ///
+    /// `vello_encoding` clamps element counts to the limit, so a saturated
+    /// buffer asks for exactly `LIMIT`. One byte more than that is what a
+    /// scene with a static prefix plus a dynamic tail actually requests, and
+    /// with `SIZE_CLASS_BITS = 1` the next class is 1.5x, which is the
+    /// 201326592 that wgpu refused in the field.
+    #[test]
+    fn the_size_class_above_the_limit_is_the_number_wgpu_refused() {
+        let rounded = ResourcePool::size_class(LIMIT + 1, SIZE_CLASS_BITS);
+        assert_eq!(
+            rounded, 201_326_592,
+            "1.5 x 128MiB, the observed panic size"
+        );
+        assert!(
+            rounded > LIMIT,
+            "rounding is what puts a clamped buffer over the limit"
+        );
+    }
+
+    /// A size already at the ceiling must not be rounded past it.
+    #[test]
+    fn a_buffer_exactly_at_the_limit_is_left_alone() {
+        assert_eq!(ResourcePool::size_class(LIMIT, SIZE_CLASS_BITS), LIMIT);
+    }
+
+    /// Ordinary sizes still round up: the fix must not disable size classes.
+    #[test]
+    fn small_buffers_still_round_to_their_class() {
+        // One bit of mantissa is retained, so the classes are 2, 3, 4, 6, 8,
+        // 12 ... Anything at or below `1 << SIZE_CLASS_BITS` gets that floor.
+        assert_eq!(ResourcePool::size_class(1, SIZE_CLASS_BITS), 2);
+        assert_eq!(ResourcePool::size_class(3, SIZE_CLASS_BITS), 3);
+        assert_eq!(ResourcePool::size_class(5, SIZE_CLASS_BITS), 6);
+        assert_eq!(ResourcePool::size_class(7, SIZE_CLASS_BITS), 8);
     }
 }
