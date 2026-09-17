@@ -152,6 +152,18 @@ struct ResourcePool {
     bufs: HashMap<BufferProperties, PoolClass>,
     /// Frames observed, which is what "unused for a while" is measured in.
     frame: u64,
+    /// `max_storage_buffer_binding_size`, read once.
+    ///
+    /// `Device::limits()` is not a field read: it goes through wgpu-core's
+    /// hub, looks the device up by id, and returns the whole `Limits` struct
+    /// by value. Doing that per buffer per frame to read one `u64` would put a
+    /// registry lookup and a large struct copy on the allocation path.
+    ///
+    /// The value is a property of the device and cannot change while it lives,
+    /// so it is read on the first allocation and kept. `None` only before that
+    /// first call, which is why this is not a constructor argument: the pool is
+    /// built by `Default`, before any device is in hand.
+    max_storage_binding: Option<u64>,
 }
 
 /// One size class's spares, and when they were last wanted.
@@ -1062,21 +1074,25 @@ impl ResourcePool {
          */
         let mut rounded_size = Self::size_class(size, SIZE_CLASS_BITS);
         if usage.contains(BufferUsages::STORAGE) {
-            let max_binding_size = device.limits().max_storage_buffer_binding_size;
+            let max_binding_size = *self
+                .max_storage_binding
+                .get_or_insert_with(|| device.limits().max_storage_buffer_binding_size);
             if rounded_size > max_binding_size {
+                // Cold: reaching here means the scene saturated a buffer, which
+                // is the frame that used to abort. The formatting cost sits
+                // inside the branch that is already degrading.
                 if size <= max_binding_size {
                     log::warn!(
                         "{name} rounded from {size} to {rounded_size}, past the device's \
                          {max_binding_size} binding limit; clamping to the limit"
                     );
-                    rounded_size = max_binding_size;
                 } else {
                     log::warn!(
                         "{name} needs {size}, past the device's {max_binding_size} binding \
                          limit; clamping, so this frame will be missing content"
                     );
-                    rounded_size = max_binding_size;
                 }
+                rounded_size = max_binding_size;
             }
         }
         let props = BufferProperties {
