@@ -8,7 +8,7 @@
 #
 # `[lib]` stays `glifo`, so `use glifo::` is unchanged.
 name = "ps-glifo"
-version = "0.3.0"
+version.workspace = true
 description = "Glifo provides APIs for efficiently rendering text."
 keywords = ["text", "layout"]
 categories = ["gui", "graphics"]

@@ -5,7 +5,7 @@
 # moves. Same split `vello`/`ps-vello` already uses.
 name = "ps-vello-common"
 # When updating, also update the version in the workspace dependency in the root Cargo.toml
-version = "0.2.0"
+version.workspace = true
 description = "Core data structures and utilities shared across the Vello rendering, including geometry processing and tiling logic."
 categories = ["rendering", "graphics"]
 keywords = ["2d", "vector-graphics"]
