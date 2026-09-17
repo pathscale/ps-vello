@@ -160,11 +160,31 @@ jobs:
           save-if: ${{ github.event_name != 'merge_group' }}
           cache-bin: ${{ matrix.os != 'macos-latest' }} # works around https://github.com/Swatinem/rust-cache/issues/341
 
-      - name: cargo clippy (no_std)
+      # `--each-feature` expands to dozens of clippy invocations per step, and
+      # the four of them are most of this job's runtime. That sweep is
+      # upstream's insurance for a crate published with many optional feature
+      # combinations; this fork is consumed with one. Run it before a release,
+      # or with `workflow_dispatch`, not on every push to every branch.
+      - name: cargo clippy (no_std, every feature)
+        if: github.event_name == 'workflow_dispatch'
         run: cargo hack clippy ${{ env.RUST_NO_STD_PKGS }} --locked --optional-deps --each-feature --ignore-unknown-features --features libm,u8_pipeline,f32_pipeline --exclude-features ${{ env.FEATURES_DEPENDING_ON_STD }} --target x86_64-unknown-none -- -D warnings
 
-      - name: cargo clippy
+      # What the sweep above is insurance for, at the two ends of the feature
+      # space where conditional compilation actually breaks. A `[[bin]]` that
+      # could not resolve its own renamed crate showed up here and nowhere
+      # else, so these two are the ones worth paying for on every push.
+      - name: cargo clippy (no_std)
+        run: cargo clippy ${{ env.RUST_NO_STD_PKGS }} --locked --no-default-features --features libm,u8_pipeline,f32_pipeline --target x86_64-unknown-none -- -D warnings
+
+      - name: cargo clippy (every feature)
+        if: github.event_name == 'workflow_dispatch'
         run: cargo hack clippy --workspace --locked --optional-deps --each-feature --ignore-unknown-features --features std,u8_pipeline,f32_pipeline -- -D warnings
+
+      - name: cargo clippy
+        run: cargo clippy --workspace --locked --all-targets -- -D warnings
+
+      - name: cargo clippy (no default features)
+        run: cargo clippy --workspace --locked --no-default-features -- -D warnings
 
       - name: cargo clippy (vello_cpu - u8 pipeline)
         run: cargo clippy -p ps-vello-cpu --locked --no-default-features --features std,text,png,u8_pipeline
@@ -172,7 +192,8 @@ jobs:
       - name: cargo clippy (vello_cpu - f32 pipeline)
         run: cargo clippy -p ps-vello-cpu --locked --no-default-features --features std,text,png,f32_pipeline
 
-      - name: cargo clippy (auxiliary)
+      - name: cargo clippy (auxiliary, every feature)
+        if: github.event_name == 'workflow_dispatch'
         run: cargo hack clippy --workspace --locked --optional-deps --each-feature --ignore-unknown-features --features std,u8_pipeline,f32_pipeline --tests --benches --examples -- -D warnings
 
   clippy-stable-wasm:
