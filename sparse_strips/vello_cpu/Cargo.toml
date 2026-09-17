@@ -4,7 +4,7 @@
 # every path in this workspace are unchanged: only the package a dependent asks
 # for by version moves. Same split `vello`/`ps-vello` already uses.
 name = "ps-vello-cpu"
-version = "0.2.0"
+version.workspace = true
 description = "A CPU-based renderer for Vello, optimized for SIMD and multithreaded execution."
 categories = ["rendering", "graphics"]
 keywords = ["2d", "vector-graphics"]

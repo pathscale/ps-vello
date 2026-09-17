@@ -4,7 +4,7 @@
 # this workspace is unchanged: only the package a dependent asks for by version
 # moves. Same split `vello`/`ps-vello` already uses.
 name = "ps-vello-hybrid"
-version = "0.2.0"
+version.workspace = true
 description = "A hybrid CPU/GPU renderer for Vello, balancing computation between CPU and GPU for efficiency."
 categories = ["rendering", "graphics"]
 keywords = ["2d", "vector-graphics"]
