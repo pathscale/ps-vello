@@ -1,0 +1,89 @@
+# Publish to crates.io when a version changes on master.
+#
+# # Why this is not keyed to one version
+#
+# There are eight publishable crates on three independent version lines:
+# ps-vello, ps-vello-encoding and ps-vello-shaders share the workspace
+# version; ps-vello-common, ps-vello-cpu, ps-vello-hybrid and
+# ps-vello-sparse-shaders are on their own; ps-glifo on another. Watching a
+# single version would silently skip whichever line moved.
+#
+# So the job asks crates.io what exists and publishes what does not. That is
+# idempotent: a run with nothing to do publishes nothing, and a re-run after a
+# partial failure picks up exactly the crates that did not make it. Publishing
+# is irreversible, so "skip what is already there" is the only safe shape.
+#
+# # Why the order is fixed rather than computed
+#
+# A crate cannot publish until its dependencies are on the registry. Cargo
+# resolves the graph, but crates.io needs each dependency to already exist, so
+# the list below is a topological order maintained by hand. It is short and it
+# changes about once a year; deriving it would cost more than it saves.
+name: Publish
+
+on:
+  push:
+    branches: [master]
+    # Only when a manifest moved. Publishing is keyed to versions, and versions
+    # only live in these files, so a source-only commit has nothing to do here.
+    paths:
+      - "**/Cargo.toml"
+  # For a release that needs re-running after a partial failure.
+  workflow_dispatch:
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: cargo publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: install native dependencies
+        run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev libfontconfig-dev
+
+      - name: publish what is not on crates.io yet
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Dependency order: a crate cannot publish before the crates it
+          # depends on exist on the registry.
+          crates="ps-vello-encoding ps-vello-shaders ps-vello ps-glifo ps-vello-common ps-vello-sparse-shaders ps-vello-cpu ps-vello-hybrid"
+          for crate in $crates; do
+            version=$(cargo metadata --no-deps --format-version 1 \
+              | jq -r --arg crate "$crate" '.packages[] | select(.name == $crate) | .version')
+            if [ -z "$version" ] || [ "$version" = "null" ]; then
+              echo "::error::$crate is not in this workspace"
+              exit 1
+            fi
+            # The sparse index is the authority on what exists, and unlike the
+            # web API it needs no `User-Agent` etiquette: crates.io rejects an
+            # unidentified API request, which a naive check reads as "not
+            # published" and then tries to publish a version that is already
+            # there.
+            #
+            # The index path is sharded by name length, which is why this is
+            # not simply the crate name.
+            case ${#crate} in
+              1) index_path="1/$crate" ;;
+              2) index_path="2/$crate" ;;
+              3) index_path="3/${crate:0:1}/$crate" ;;
+              *) index_path="${crate:0:2}/${crate:2:2}/$crate" ;;
+            esac
+            if curl --silent --fail "https://index.crates.io/$index_path" 2>/dev/null \
+                | jq -e --arg version "$version" 'select(.vers == $version)' > /dev/null; then
+              echo "$crate $version is already published"
+              continue
+            fi
+            echo "publishing $crate $version"
+            cargo publish -p "$crate"
+            # crates.io needs a moment to make a new version resolvable before
+            # the next crate in the list can depend on it.
+            sleep 30
+          done

@@ -60,20 +60,26 @@ env:
 name: CI
 
 on:
+  # Manual only.
+  #
+  # This suite is upstream's, sized for a crate published to the world from
+  # many contributors: every feature combination, four targets, wasm and
+  # android. A fork consumed by one application does not learn anything from
+  # running it on every push, and it ran on every push of every branch here -
+  # six to ten minutes a time, mostly `cargo hack --each-feature`.
+  #
+  # The checks that actually catch things run locally in seconds, and that is
+  # where they belong:
+  #
+  #   cargo clippy --workspace --all-targets -- -D warnings
+  #   cargo clippy --workspace --no-default-features -- -D warnings
+  #   cargo test -p ps-vello --lib
+  #
+  # Run this before a release, or when touching something wide enough to want
+  # the matrix. `workflow_dispatch` is the button.
+  #
+  # Deliberately no `push`, no `pull_request`, and no `merge_group`.
   workflow_dispatch:
-  pull_request:
-  merge_group:
-  # Deliberately no `push: main`.
-  #
-  # Upstream runs both, to prime the cache from the push event because a cache
-  # written in `merge_group` is not visible to later PRs
-  # (https://github.com/orgs/community/discussions/66430). The cost is running
-  # the whole suite twice for every merge: once in the merge group and again on
-  # the identical commit.
-  #
-  # This fork does not use merge queues, so `pull_request` already covers every
-  # commit before it lands and the second run is pure duplication. Add the push
-  # trigger back if a merge queue is ever turned on here.
 
 # Cancel superseded CI runs for the same PR to save runner time.
 concurrency:
