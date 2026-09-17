@@ -45,31 +45,12 @@ jobs:
         if: inputs.dry_run
         run: cargo package --workspace
 
-      # Cargo knows which crates are publishable and what order they depend on
-      # each other in. Saying either again here would be a second copy to keep
-      # correct, and the copy is what goes stale when a crate is added.
-      #
-      # What it does not do is tolerate a version that is already on the
-      # registry: it fails the whole run with
-      #
-      #     error: crate ps-vello@0.10.1 already exists on crates.io index
-      #
-      # A dry run only warns about that, which is how this shipped broken. So
-      # the one case worth surviving is handled here: a release where some
-      # crates made it and others did not, and the re-run has to skip what is
-      # already live. Anything else still fails the job.
+      # Cargo knows which crates are publishable, what order they depend on
+      # each other in, and which versions are already on the registry. Saying
+      # any of that again here would be a second copy to keep correct, and the
+      # copy is what goes stale when a crate is added.
       - name: Publish
         if: '!inputs.dry_run'
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        shell: bash
-        run: |
-          set -o pipefail
-          if cargo publish --workspace 2>&1 | tee /tmp/publish.log; then
-            exit 0
-          fi
-          if grep -q "already exists on crates.io index" /tmp/publish.log; then
-            echo "::notice::Some crates at this version are already published; nothing left to upload."
-            exit 0
-          fi
-          exit 1
+        run: cargo publish --workspace
