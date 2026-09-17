@@ -5,9 +5,8 @@ name: Publish
 # dummy version change. Existing versions exit cleanly.
 #
 # Every publishable crate takes `version.workspace = true`, so there is one
-# number to bump and the assertion below is meaningful. Five of them used to
-# carry their own, which is how this fork ended up publishing ps-vello 0.10.1
-# beside ps-vello-common 0.2.0 and ps-glifo 0.3.0.
+# number to bump. Five of them used to carry their own, which is how this fork
+# ended up publishing ps-vello 0.10.1 beside ps-vello-common 0.2.0.
 on:
   push:
     branches: [master]
@@ -42,100 +41,16 @@ jobs:
       - name: install native dependencies
         run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev libfontconfig-dev
 
-      - name: Are these versions already on crates.io?
-        id: check
-        shell: bash
-        run: |
-          set -euo pipefail
-          version=""
-          missing=""
-          # Dependency order: a crate cannot publish before the crates it
-          # depends on exist on the registry. Maintained by hand because it
-          # changes about once a year.
-          for crate_name in ps-vello-encoding ps-vello-shaders ps-vello ps-glifo ps-vello-common ps-vello-sparse-shaders ps-vello-cpu ps-vello-hybrid; do
-            package_version=$(cargo metadata --no-deps --format-version 1 \
-              | jq -r --arg name "$crate_name" '.packages[] | select(.name == $name) | .version')
-            if [ -n "$version" ] && [ "$package_version" != "$version" ]; then
-              echo "workspace package versions disagree: $version and $package_version" >&2
-              exit 1
-            fi
-            version=$package_version
-            published=$(curl -sS -H 'User-Agent: pathscale-ci' \
-              "https://crates.io/api/v1/crates/$crate_name/versions" \
-              | jq -r --arg v "$version" '.versions[]? | select(.num == $v) | .num' || true)
-            if [ -n "$published" ]; then
-              echo "$crate_name $version is already published"
-            else
-              missing="$missing $crate_name"
-              echo "$crate_name $version is new"
-            fi
-          done
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "missing=${missing# }" >> "$GITHUB_OUTPUT"
-          if [ -n "$missing" ]; then
-            echo "already=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "already=true" >> "$GITHUB_OUTPUT"
-          fi
+      - name: Package
+        if: inputs.dry_run
+        run: cargo package --workspace
 
-      - name: Build
-        if: steps.check.outputs.already == 'false'
-        run: cargo build --release
-
-      - name: Test
-        if: steps.check.outputs.already == 'false'
-        run: cargo test --release -p ps-vello
-
-      - name: Package dry run
-        if: steps.check.outputs.already == 'false' && inputs.dry_run
-        shell: bash
-        run: |
-          set -euo pipefail
-          for crate_name in ${{ steps.check.outputs.missing }}; do
-            cargo package -p "$crate_name" --no-verify
-          done
-
+      # Cargo knows which crates are publishable, what order they depend on
+      # each other in, and which versions are already on the registry. Saying
+      # any of that again here would be a second copy to keep correct, and the
+      # copy is what goes stale when a crate is added.
       - name: Publish
-        if: steps.check.outputs.already == 'false' && !inputs.dry_run
+        if: '!inputs.dry_run'
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-          VERSION: ${{ steps.check.outputs.version }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ -z "$CARGO_REGISTRY_TOKEN" ]; then
-            echo "CARGO_REGISTRY_TOKEN is not set on this repository" >&2
-            echo "Add it under Settings -> Secrets -> Actions." >&2
-            exit 1
-          fi
-          # Re-check rather than trusting the earlier step: publishing cannot
-          # be undone, and a concurrent release may have landed in between.
-          for crate_name in ps-vello-encoding ps-vello-shaders ps-vello ps-glifo ps-vello-common ps-vello-sparse-shaders ps-vello-cpu ps-vello-hybrid; do
-            published=$(curl -sS -H 'User-Agent: pathscale-ci' \
-              "https://crates.io/api/v1/crates/$crate_name/versions" \
-              | jq -r --arg v "$VERSION" '.versions[]? | select(.num == $v) | .num' || true)
-            if [ -n "$published" ]; then
-              echo "$crate_name $VERSION is already published; skipping"
-            else
-              # No `--locked`: publishing one crate makes the next one's
-              # dependency on it resolvable at the new version, which changes
-              # the lockfile, and `--locked` would then abort the sequence
-              # partway with some crates already permanently live.
-              cargo publish -p "$crate_name" --registry crates-io
-            fi
-          done
-
-      - name: Summary
-        if: always()
-        run: |
-          {
-            if [ '${{ steps.check.outputs.already }}' = 'true' ]; then
-              echo "Nothing to publish: all ps-vello crates at \`${{ steps.check.outputs.version }}\` are already on crates.io."
-              echo
-              echo 'Bump `version` in the workspace Cargo.toml to cut a new release.'
-            elif [ '${{ inputs.dry_run }}' = 'true' ]; then
-              echo "Dry run: packaged \`${{ steps.check.outputs.missing }}\` at \`${{ steps.check.outputs.version }}\` without uploading."
-            else
-              echo "Published \`${{ steps.check.outputs.missing }}\` at \`${{ steps.check.outputs.version }}\`."
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
+        run: cargo publish --workspace
