@@ -2453,7 +2453,7 @@ dependencies = [
 
 [[package]]
 name = "native_webgl"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "console_error_panic_hook",
  "console_log",
@@ -3263,7 +3263,7 @@ dependencies = [
 
 [[package]]
 name = "ps-vello"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "bytemuck",
  "futures-intrusive",
@@ -3312,7 +3312,7 @@ dependencies = [
 
 [[package]]
 name = "ps-vello-encoding"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "bytemuck",
  "guillotiere",
@@ -3343,7 +3343,7 @@ dependencies = [
 
 [[package]]
 name = "ps-vello-shaders"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "bytemuck",
  "log",
@@ -4851,7 +4851,7 @@ dependencies = [
 
 [[package]]
 name = "wasm_cpu"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "bytemuck",
  "console_error_panic_hook",
@@ -5256,7 +5256,7 @@ dependencies = [
 
 [[package]]
 name = "wgpu_webgl"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "console_error_panic_hook",
  "console_log",
