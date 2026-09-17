@@ -11,10 +11,10 @@ env:
   RUST_MIN_VER: "1.88"
   # List of packages that will be checked with the minimum supported Rust version.
   # This should be limited to packages that are intended for publishing.
-  RUST_MIN_VER_PKGS: "-p ps-vello -p ps-vello-encoding -p ps-vello-shaders -p vello_common -p vello_cpu -p vello_hybrid -p glifo"
+  RUST_MIN_VER_PKGS: "-p ps-vello -p ps-vello-encoding -p ps-vello-shaders -p ps-vello-common -p ps-vello-cpu -p ps-vello-hybrid -p ps-glifo"
   # List of packages that will be checked for `no_std` builds.
   # This should be limited to packages that are intended for publishing.
-  RUST_NO_STD_PKGS: "-p vello_common -p vello_cpu -p glifo"
+  RUST_NO_STD_PKGS: "-p ps-vello-common -p ps-vello-cpu -p ps-glifo"
   # List of features that depend on the standard library and will be excluded from no_std checks.
   FEATURES_DEPENDING_ON_STD: "std,default,png,pico_svg,multithreading,probe"
   # List of packages that can not target Wasm.
@@ -118,16 +118,16 @@ jobs:
           tool: cargo-rdme@1.4.8
 
       - name: Run cargo rdme (vello_cpu)
-        run: cargo rdme --check --workspace-project=vello_cpu
+        run: cargo rdme --check --workspace-project=ps-vello-cpu
 
       - name: Run cargo rdme (vello_common)
-        run: cargo rdme --check --workspace-project=vello_common
+        run: cargo rdme --check --workspace-project=ps-vello-common
     
       - name: Run cargo rdme (vello_hybrid)
-        run: cargo rdme --check --workspace-project=vello_hybrid
+        run: cargo rdme --check --workspace-project=ps-vello-hybrid
 
       - name: Run cargo rdme (glifo)
-        run: cargo rdme --check --workspace-project=glifo
+        run: cargo rdme --check --workspace-project=ps-glifo
 
   clippy-stable:
     name: cargo clippy
@@ -167,10 +167,10 @@ jobs:
         run: cargo hack clippy --workspace --locked --optional-deps --each-feature --ignore-unknown-features --features std,u8_pipeline,f32_pipeline -- -D warnings
 
       - name: cargo clippy (vello_cpu - u8 pipeline)
-        run: cargo clippy -p vello_cpu --locked --no-default-features --features std,text,png,u8_pipeline
+        run: cargo clippy -p ps-vello-cpu --locked --no-default-features --features std,text,png,u8_pipeline
 
       - name: cargo clippy (vello_cpu - f32 pipeline)
-        run: cargo clippy -p vello_cpu --locked --no-default-features --features std,text,png,f32_pipeline
+        run: cargo clippy -p ps-vello-cpu --locked --no-default-features --features std,text,png,f32_pipeline
 
       - name: cargo clippy (auxiliary)
         run: cargo hack clippy --workspace --locked --optional-deps --each-feature --ignore-unknown-features --features std,u8_pipeline,f32_pipeline --tests --benches --examples -- -D warnings
