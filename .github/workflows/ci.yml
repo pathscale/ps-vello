@@ -92,6 +92,8 @@ jobs:
     runs-on: ubicloud-standard-4
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: install stable toolchain
         uses: dtolnay/rust-toolchain@master
@@ -143,6 +145,8 @@ jobs:
         os: [ubicloud-standard-4]
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: install stable toolchain
         uses: dtolnay/rust-toolchain@master
@@ -208,6 +212,8 @@ jobs:
     runs-on: ubicloud-standard-4
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: install stable toolchain
         uses: dtolnay/rust-toolchain@master
@@ -241,6 +247,8 @@ jobs:
     runs-on: ubicloud-standard-4
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: install stable toolchain
         uses: dtolnay/rust-toolchain@master
@@ -276,6 +284,8 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v6
+      with:
+        persist-credentials: false
 
     - id: calc-hash
       name: Calculate LFS hash
@@ -313,6 +323,8 @@ jobs:
             gpu: 'yes'
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
         # We intentionally do not use lfs: true here, instead using the caching method to save LFS bandwidth.
 
       - name: Restore lfs cache
@@ -402,6 +414,8 @@ jobs:
             rustflags: "-Ctarget-feature=+simd128"
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
         # We intentionally do not use lfs: true here, instead using the caching method to save LFS bandwidth.
 
       - name: Restore lfs cache
@@ -453,6 +467,8 @@ jobs:
     runs-on: ubicloud-standard-4
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: install stable toolchain
         uses: dtolnay/rust-toolchain@master
@@ -485,6 +501,8 @@ jobs:
     runs-on: ubicloud-standard-4
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: install stable toolchain
         uses: dtolnay/rust-toolchain@master
@@ -514,6 +532,8 @@ jobs:
         os: [ubicloud-standard-4]
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: install msrv toolchain
         uses: dtolnay/rust-toolchain@master
@@ -548,6 +568,8 @@ jobs:
     runs-on: ubicloud-standard-4
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: install msrv toolchain
         uses: dtolnay/rust-toolchain@master
@@ -575,6 +597,8 @@ jobs:
     runs-on: ubicloud-standard-4
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: install nightly toolchain
         uses: dtolnay/rust-toolchain@nightly
@@ -598,6 +622,8 @@ jobs:
     runs-on: ubicloud-standard-4
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: check typos
         uses: crate-ci/typos@v1.45.0
