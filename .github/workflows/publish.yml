@@ -8,12 +8,6 @@ name: Publish
 # number to bump. Five of them used to carry their own, which is how this fork
 # ended up publishing ps-vello 0.10.1 beside ps-vello-common 0.2.0.
 on:
-  push:
-    branches: [master]
-    paths:
-      - Cargo.toml
-      - "*/Cargo.toml"
-      - sparse_strips/*/Cargo.toml
   workflow_dispatch:
     inputs:
       dry_run:
